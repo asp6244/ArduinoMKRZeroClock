@@ -1,5 +1,5 @@
 #include <Wire.h>
-#include "RTClib.h"
+#include <RTClib.h>
 #include <LiquidCrystal_I2C.h>
 
 #include <SPI.h>
@@ -11,6 +11,8 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 /* Create an rtc object */
 RTC_DS3231 rtc;
+
+#define CLOCK_ADDRESS 0x68
 
 // defines pins numbers
 const byte stepPin = 8;
@@ -27,9 +29,7 @@ const int numSteps = 5; // full rotation
 const int timeSpeed = 600;
 byte thisTime = 0;
 byte oldTime = 0;
-byte oldDay = 0;
-
-byte weekDay = 0;
+float temp = 0;
 
 const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
@@ -129,6 +129,7 @@ void setup() {
     dateTime.close();
     
     rtc.adjust(DateTime(thisYear, thisMonth, thisDay, thisHour, thisMinute, thisSecond));
+    setDoW(thisWeek);
     // This line sets the RTC with an explicit date & time, for example to set
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
@@ -156,7 +157,10 @@ void loop() {
   DateTime now = rtc.now();
   thisTime = now.second();
   
+    Serial.println(thisTime);
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
+    temp = rtc.getTemperature();
+    
     updateTime();
 
     rotateMotor();
@@ -198,15 +202,9 @@ void updateTime() {
   int year = now.year();
   byte month = now.month();
   byte day = now.day();
-  if (day != oldDay) {
-    oldDay = day;
-    weekDay++;
-    if (weekDay > 6) {
-      weekDay = 0;
-    }
-  }
+  byte DoW = getDoW();
 
-  updateUpperLCD(year, month, day, weekDay, true);
+  updateUpperLCD(year, month, day, DoW, true);
 
   byte hours = now.hour();
   byte rawHours = hours;
@@ -222,10 +220,12 @@ void updateTime() {
 
   byte minutes = now.minute();
   byte seconds = now.second();
-  if (rawHours == 0 && minutes == 0 && seconds == 0) {
+  if (minutes == 0 && seconds == 0) {
     updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 
-    writeTime(year, month, day, rawHours, minutes, 1);
+    if (rawHours == 0) {
+      writeTime(year, month, day, rawHours, minutes, 1, DoW);
+    }
 
     int oldSecs = seconds;
     hourlyAlarm();
@@ -277,7 +277,7 @@ void updateUpperLCD(int year, byte month, byte day, byte week, char hideType) {
 }
 
 void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
-  lcd.setCursor(1, 1);
+  lcd.setCursor(0, 1);
   String hourDisp = formatTime(hours, true);
   String minDisp = formatTime(minutes, false);
   String secDisp = formatTime(seconds, false);
@@ -292,7 +292,7 @@ void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, cha
       secDisp = "  ";
       break;
   }
-  lcd.print(hourDisp + ":" + minDisp + ":" + secDisp + " " + sunlight + "    ");
+  lcd.print(hourDisp + ":" + minDisp + ":" + secDisp + " " + sunlight + " " + processTemp());
 }
 
 String formatTime(int theTime, boolean hours) {
@@ -305,6 +305,13 @@ String formatTime(int theTime, boolean hours) {
   } else {
     return String(theTime);
   }
+}
+
+String processTemp() {
+  int tempC = round(temp);
+  //int tempF = round(temp*9.0/5.0 + 32.0);
+  String theTemp = String(tempC);
+  return (theTemp + (char)223 + "C");
 }
 
 void hourlyAlarm() {
@@ -323,7 +330,7 @@ void hourlyAlarm() {
   soundFile.close();
 }
 
-void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte seconds) {
+void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte seconds, byte DoW) {
   File dateTime = SD.open("dateTime.txt", O_WRITE | O_CREAT);
   if (dateTime) {
     Serial.print("Writing to dateTime.txt...");
@@ -333,7 +340,7 @@ void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte se
     dateTime.write(hours);
     dateTime.write(minutes);
     dateTime.write(seconds);
-    dateTime.write(weekDay);
+    dateTime.write(DoW);
     // close the file:
     dateTime.close();
     Serial.println("done.");
@@ -351,32 +358,34 @@ void resetTime() {
   byte hours = now.hour();
   byte minutes = now.minute();
   byte seconds = now.second();
+  byte DoW = getDoW();
 
-  weekDay = processReset('w', year, month, day);
-  updateUpperLCD(year, month, day, weekDay, ' ');
-  month = processReset('m', year, month, day);
+  DoW = processReset('w', year, month, day, DoW);
+  updateUpperLCD(year, month, day, DoW, ' ');
+  month = processReset('m', year, month, day, DoW);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, weekDay, ' ');
-  day = processReset('d', year, month, day);
-  updateUpperLCD(year, month, day, weekDay, ' ');
-  year = processReset('y', year, month, day);
+  updateUpperLCD(year, month, day, DoW, ' ');
+  day = processReset('d', year, month, day, DoW);
+  updateUpperLCD(year, month, day, DoW, ' ');
+  year = processReset('y', year, month, day, DoW);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, weekDay, ' ');
-  hours = processReset('h', hours, minutes, seconds);
+  updateUpperLCD(year, month, day, DoW, ' ');
+  hours = processReset('h', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
-  minutes = processReset('n', hours, minutes, seconds);
+  minutes = processReset('n', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
-  seconds = processReset('s', hours, minutes, seconds);
+  seconds = processReset('s', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
 
   rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
+  setDoW(DoW);
 
-  writeTime(year, month, day, hours, minutes, seconds);
+  writeTime(year, month, day, hours, minutes, seconds, DoW);
 
   timeout = false;
 }
 
-byte processReset(char type, byte data1, byte data2, byte data3) {
+int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
   while (digitalRead(setTimePin)) {
     delay(50);
   }
@@ -396,7 +405,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
   } else if (type == 'd' || type == 's') {
     newTime = data3;
   } else if (type == 'w') {
-    newTime = weekDay;
+    newTime = DoW;
   }
 
   while (setting && !timeout) {
@@ -448,8 +457,6 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         break;
       }
       case 'y': {
-        //newTime = processTime(newTime, 99, 0, 100);
-
         if (newTime % 4 != 0 && data2 == 2 && data3 == 29) {
           data3 = 28;
           errorCheckDay = 28;
@@ -458,9 +465,9 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(newTime, data2, data3, weekDay, 'y');
+          updateUpperLCD(newTime, data2, data3, DoW, 'y');
         } else {
-          updateUpperLCD(newTime, data2, data3, weekDay, ' ');
+          updateUpperLCD(newTime, data2, data3, DoW, ' ');
         }
         break;
       }
@@ -480,9 +487,9 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(data1, newTime, data3, weekDay, 'm');
+          updateUpperLCD(data1, newTime, data3, DoW, 'm');
         } else {
-          updateUpperLCD(data1, newTime, data3, weekDay, ' ');
+          updateUpperLCD(data1, newTime, data3, DoW, ' ');
         }
         break;
       }
@@ -499,9 +506,9 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(data1, data2, newTime, weekDay, 'd');
+          updateUpperLCD(data1, data2, newTime, DoW, 'd');
         } else {
-          updateUpperLCD(data1, data2, newTime, weekDay, ' ');
+          updateUpperLCD(data1, data2, newTime, DoW, ' ');
         }
         break;
       }
@@ -559,4 +566,35 @@ void processLCD(byte hours, byte minutes, byte seconds, char hideType) {
   }
   
   updateLowerLCD(hours, minutes, seconds, sunlight, hideType);
+}
+
+
+/////////////// These functions were taken from the DS3231 Github ///////////////
+/////////////// https://github.com/NorthernWidget/DS3231/blob/master/DS3231.cpp ///////////////
+
+byte getDoW() {
+  Wire.beginTransmission(CLOCK_ADDRESS);
+  Wire.write(0x03);
+  Wire.endTransmission();
+
+  Wire.requestFrom(CLOCK_ADDRESS, 1);
+  return bcdToDec(Wire.read());
+}
+
+void setDoW(byte DoW) {
+  // Sets the Day of Week
+  Wire.beginTransmission(CLOCK_ADDRESS);
+  Wire.write(0x03);
+  Wire.write(decToBcd(DoW));  
+  Wire.endTransmission();
+}
+
+byte bcdToDec(byte val) {
+// Convert binary coded decimal to normal decimal numbers
+  return ( (val/16*10) + (val%16) );
+}
+
+byte decToBcd(byte val) {
+// Convert normal decimal numbers to binary coded decimal
+  return ( (val/10*16) + (val%10) );
 }
