@@ -27,6 +27,7 @@ const int numSteps = 5; // full rotation
 const int timeSpeed = 600;
 byte thisTime = 0;
 byte oldTime = 0;
+byte oldDay = 0;
 
 /* Change these values to set the current initial time and time*/
 const byte year = 20;
@@ -35,11 +36,12 @@ const byte day = 11;
 const byte hours = 19;
 const byte minutes = 9;
 const byte seconds = 50;
+byte weekDay = 0;
 
 const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-
 const byte monthLens[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+const String weeks[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 
 const String files[] = {"7395", "2682209", "alaska", "alask-im", "amer-nev", "anch-lib",
                         "chi-fall", "comdeat1", "comdeat2", "comdetec", "comengag",
@@ -102,6 +104,7 @@ void setup() {
   byte thisHour = dateTime.read();
   byte thisMinute = dateTime.read();
   byte thisSecond = dateTime.read();
+  byte thisWeek = dateTime.read();
 
   Serial.print("Year: ");
   Serial.println(thisYear);
@@ -115,6 +118,8 @@ void setup() {
   Serial.println(thisMinute);
   Serial.print("Second: ");
   Serial.println(thisSecond);
+  Serial.print("Week: ");
+  Serial.println(thisWeek);
 
   // close the file:
   dateTime.close();
@@ -127,10 +132,13 @@ void setup() {
   if (thisTime > oldTime) {
     rtc.setTime(thisHour, thisMinute, thisSecond);
     rtc.setDate(thisDay, thisMonth, thisYear);
+    weekDay = thisWeek;
+    oldDay = thisDay;
     Serial.println("Using SD time");
   } else {
     rtc.setTime(hours, minutes, seconds);
     rtc.setDate(day, month, year);
+    oldDay = day;
     Serial.println("Using code time");
   }
 
@@ -192,8 +200,15 @@ void updateTime() {
   byte year = rtc.getYear();
   byte month = rtc.getMonth();
   byte day = rtc.getDay();
+  if (day != oldDay) {
+    oldDay = day;
+    weekDay++;
+    if (weekDay > 6) {
+      weekDay = 0;
+    }
+  }
 
-  updateUpperLCD(year, month, day, true);
+  updateUpperLCD(year, month, day, weekDay, true);
 
   byte hours = rtc.getHours();
   byte rawHours = hours;
@@ -231,11 +246,12 @@ void updateTime() {
   updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 }
 
-void updateUpperLCD(byte year, byte month, byte day, char hideType) {
-  lcd.setCursor(1, 0);
+void updateUpperLCD(byte year, byte month, byte day, byte week, char hideType) {
+  lcd.setCursor(0, 0);
   String yearDisp = "20" + formatTime(year, false);
   String monthDisp = months[month - 1];
   String dayDisp = String(day);
+  String weekDisp = weeks[(week % 7)];
   switch(hideType) {
     case 'y':
       yearDisp = "    ";
@@ -250,8 +266,11 @@ void updateUpperLCD(byte year, byte month, byte day, char hideType) {
         dayDisp = "  ";
       }
       break;
+    case 'w':
+      weekDisp = "   ";
+      break;
   }
-  lcd.print(monthDisp + " " + dayDisp + ", " + yearDisp + "    ");
+  lcd.print(weekDisp + ", " + monthDisp + " " + dayDisp + ", " + yearDisp);
 }
 
 void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
@@ -311,6 +330,7 @@ void writeTime(byte year, byte month, byte day, byte hours, byte minutes, byte s
     dateTime.write(hours);
     dateTime.write(minutes);
     dateTime.write(seconds);
+    dateTime.write(weekDay);
     // close the file:
     dateTime.close();
     Serial.println("done.");
@@ -328,14 +348,16 @@ void resetTime() {
   byte minutes = rtc.getMinutes();
   byte seconds = rtc.getSeconds();
 
+  weekDay = processReset('w', year, month, day);
+  updateUpperLCD(year, month, day, weekDay, ' ');
   month = processReset('m', year, month, day);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, ' ');
+  updateUpperLCD(year, month, day, weekDay, ' ');
   day = processReset('d', year, month, day);
-  updateUpperLCD(year, month, day, ' ');
+  updateUpperLCD(year, month, day, weekDay, ' ');
   year = processReset('y', year, month, day);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, ' ');
+  updateUpperLCD(year, month, day, weekDay, ' ');
   hours = processReset('h', hours, minutes, seconds);
   processLCD(hours, minutes, seconds, ' ');
   minutes = processReset('n', hours, minutes, seconds);
@@ -366,6 +388,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
   int newTime = 0;
   int neutralTime = 0;
   errorCheckDay = data3;
+  int settingTime = 0;
 
   if (type == 'y' || type == 'h') {
     newTime = data1;
@@ -373,6 +396,8 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
     newTime = data2;
   } else if (type == 'd' || type == 's') {
     newTime = data3;
+  } else if (type == 'w') {
+    newTime = weekDay;
   }
 
   while (setting && !timeout) {
@@ -407,22 +432,36 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         timeout = true;
       }
     }
+    settingTime++;
 
     switch (type) {
+      case 'w': {
+        if (newTime < 0) {
+          newTime = 6;
+        }
+        newTime = newTime % 7;
+
+        if (neutralTime % 20 > 10 || settingTime < 5) {
+          updateUpperLCD(data1, data2, data3, newTime, 'w');
+        } else {
+          updateUpperLCD(data1, data2, data3, newTime, ' ');
+        }
+        break;
+      }
       case 'y': {
         newTime = processTime(newTime, 99, 0, 100);
 
-        if(newTime % 4 != 0 && data2 == 2 && data3 == 29) {
+        if (newTime % 4 != 0 && data2 == 2 && data3 == 29) {
           data3 = 28;
           errorCheckDay = 28;
           Serial.print("Gotcha bitch: ");
           Serial.println(data3);
         }
         
-        if(neutralTime % 20 > 10) {
-          updateUpperLCD(newTime, data2, data3, 'y');
+        if (neutralTime % 20 > 10 || settingTime < 5) {
+          updateUpperLCD(newTime, data2, data3, weekDay, 'y');
         } else {
-          updateUpperLCD(newTime, data2, data3, ' ');
+          updateUpperLCD(newTime, data2, data3, weekDay, ' ');
         }
         break;
       }
@@ -430,8 +469,8 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         newTime = processTime(newTime, 12, 1, 12);
 
         byte monthLen = monthLens[newTime-1];
-        if(data3 > monthLen) {
-          if(newTime == 2 && data1%4 == 0) {
+        if (data3 > monthLen) {
+          if (newTime == 2 && data1%4 == 0) {
             data3 = 29;
             errorCheckDay = 29;
             Serial.println("broken");
@@ -441,10 +480,10 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           }
         }
         
-        if(neutralTime % 20 > 10) {
-          updateUpperLCD(data1, newTime, data3, 'm');
+        if (neutralTime % 20 > 10 || settingTime < 5) {
+          updateUpperLCD(data1, newTime, data3, weekDay, 'm');
         } else {
-          updateUpperLCD(data1, newTime, data3, ' ');
+          updateUpperLCD(data1, newTime, data3, weekDay, ' ');
         }
         break;
       }
@@ -460,16 +499,16 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           newTime = processTime(newTime, monthLen, 1, monthLen);
         }
         
-        if(neutralTime % 20 > 10) {
-          updateUpperLCD(data1, data2, newTime, 'd');
+        if (neutralTime % 20 > 10 || settingTime < 5) {
+          updateUpperLCD(data1, data2, newTime, weekDay, 'd');
         } else {
-          updateUpperLCD(data1, data2, newTime, ' ');
+          updateUpperLCD(data1, data2, newTime, weekDay, ' ');
         }
         break;
       }
       case 'h': {
         newTime = processTime(newTime, 23, 0, 24);
-        if(neutralTime % 20 > 10) {
+        if (neutralTime % 20 > 10 || settingTime < 5) {
           processLCD(newTime, data2, data3, 'h');
         } else {
           processLCD(newTime, data2, data3, ' ');
@@ -478,7 +517,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
       }
       case 'n': {
         newTime = processTime(newTime, 59, 0, 60);
-        if(neutralTime % 20 > 10) {
+        if (neutralTime % 20 > 10 || settingTime < 5) {
           processLCD(data1, newTime, data3, 'n');
         } else {
           processLCD(data1, newTime, data3, ' ');
@@ -487,7 +526,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
       }
       case 's': {
         newTime = processTime(newTime, 59, 0, 60);
-        if(neutralTime % 20 > 10) {
+        if (neutralTime % 20 > 10 || settingTime < 5) {
           processLCD(data1, data2, newTime, 's');
         } else {
           processLCD(data1, data2, newTime, ' ');
