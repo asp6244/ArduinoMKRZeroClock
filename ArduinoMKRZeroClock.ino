@@ -1,18 +1,21 @@
 #include <Wire.h>
 #include <RTClib.h>
-#include <LiquidCrystal_I2C.h>
+#include <U8g2lib.h>
 
 #include <SPI.h>
 #include <SD.h>
 #include <AudioZero.h>
 
-// set the LCD address to 0x27 for a 16 chars and 2 line display
-LiquidCrystal_I2C lcd(0x27, 20, 4);
-
 /* Create an rtc object */
 RTC_DS3231 rtc;
 
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftDisplay(U8G2_R0);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightDisplay(U8G2_R0);
+
 #define CLOCK_ADDRESS 0x68
+
+#define LEFT_SCREEN 0x3C
+#define RIGHT_SCREEN 0x3D
 
 // defines pins numbers
 const byte stepPin = 8;
@@ -31,10 +34,10 @@ byte thisTime = 0;
 byte oldTime = 0;
 float temp = 0;
 
-const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+const String months[] = {"January", "February", "March", "April", "May", "June",
+                         "July", "August", "September", "October", "November", "December"};
 const byte monthLens[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-const String weeks[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+const String weeks[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 const String files[] = {"7395", "2682209", "alaska", "alask-im", "amer-nev", "anch-lib",
                         "chi-fall", "comdeat1", "comdeat2", "comdetec", "comengag",
@@ -137,8 +140,12 @@ void setup() {
 
   Serial.println();
 
-  lcd.init();
-  lcd.backlight();
+  leftDisplay.setI2CAddress(LEFT_SCREEN*2);
+  rightDisplay.setI2CAddress(RIGHT_SCREEN*2);
+  leftDisplay.begin();
+  rightDisplay.begin();
+  leftDisplay.clear();
+  rightDisplay.clear();
 
   pinMode(32, OUTPUT);
   digitalWrite(32, HIGH);
@@ -157,7 +164,8 @@ void loop() {
   DateTime now = rtc.now();
   thisTime = now.second();
   
-    Serial.println(thisTime);
+  Serial.println(thisTime);
+  
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
     temp = rtc.getTemperature();
     
@@ -204,7 +212,7 @@ void updateTime() {
   byte day = now.day();
   byte DoW = getDoW();
 
-  updateUpperLCD(year, month, day, DoW, true);
+  updateLeftOLED(year, month, day, DoW, true);
 
   byte hours = now.hour();
   byte rawHours = hours;
@@ -221,9 +229,10 @@ void updateTime() {
   byte minutes = now.minute();
   byte seconds = now.second();
   if (minutes == 0 && seconds == 0) {
-    updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
+    updateRightOLED(hours, minutes, seconds, sunlight, ' ');
 
     if (rawHours == 0) {
+      Serial.println("writing at updateTime()");
       writeTime(year, month, day, rawHours, minutes, 1, DoW);
     }
 
@@ -235,7 +244,7 @@ void updateTime() {
     while (oldSecs < seconds) {
       for (int i = 0; i < seconds - oldSecs; i++) {
         rotateMotor();
-        updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
+        updateRightOLED(hours, minutes, seconds, sunlight, ' ');
         Serial.println(oldSecs + i);
       }
       oldSecs = seconds;
@@ -245,39 +254,76 @@ void updateTime() {
     delay(500);
   }
 
-  updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
+  updateRightOLED(hours, minutes, seconds, sunlight, ' ');
 }
 
-void updateUpperLCD(int year, byte month, byte day, byte week, char hideType) {
-  lcd.setCursor(0, 0);
+void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
   String yearDisp = formatTime(year, false);
   String monthDisp = months[month - 1];
   String dayDisp = String(day);
   String weekDisp = weeks[(week % 7)];
-  switch(hideType) {
-    case 'y':
-      yearDisp = "    ";
-      break;
-    case 'm':
-      monthDisp = "   ";
-      break;
-    case 'd':
-      if(day < 10) {
-        dayDisp = " ";
-      } else {
-        dayDisp = "  ";
-      }
-      break;
-    case 'w':
-      weekDisp = "   ";
-      break;
+  
+  String daySuffix = "th";
+  if (day < 11 || day > 13) {
+    switch (day % 10) {
+      case 1:
+        daySuffix = "st";
+        break;
+      case 2:
+        daySuffix = "nd";
+        break;
+      case 3:
+        daySuffix = "rd";
+        break;
+    }
   }
   
-  lcd.print(weekDisp + ", " + monthDisp + " " + dayDisp + " " + yearDisp + " ");
+  switch (hideType) {
+    case 'y':
+      yearDisp = " ";
+      break;
+    case 'm':
+      monthDisp = " ";
+      break;
+    case 'd':
+      dayDisp = " ";
+      daySuffix = " ";
+      break;
+    case 'w':
+      weekDisp = " ";
+      break;
+  }
+
+  char yearChar[5];
+  yearDisp.toCharArray(yearChar, 5);
+  char monthChar[10];
+  monthDisp.toCharArray(monthChar, 10);
+  char dayChar[3];
+  dayDisp.toCharArray(dayChar, 3);
+  char weekChar[10];
+  weekDisp.toCharArray(weekChar, 10);
+  char suffixChar[3];
+  daySuffix.toCharArray(suffixChar, 3);
+
+  int suffixXPos = 24;
+  if (day >= 10) {
+    suffixXPos += 16;
+  }
+
+  leftDisplay.firstPage();
+  do {
+    leftDisplay.setFont(u8g2_font_profont22_mf);
+    leftDisplay.drawStr(80, 63, yearChar);
+    leftDisplay.setFont(u8g2_font_profont29_tf);
+    leftDisplay.drawStr(10, 63, dayChar);
+    leftDisplay.setFont(u8g2_font_profont22_mf);
+    leftDisplay.drawStr(suffixXPos, 63, suffixChar);
+    leftDisplay.drawStr(0, 35, monthChar);
+    leftDisplay.drawStr(0, 15, weekChar);
+  } while (leftDisplay.nextPage());
 }
 
-void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
-  lcd.setCursor(0, 1);
+void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
   String hourDisp = formatTime(hours, true);
   String minDisp = formatTime(minutes, false);
   String secDisp = formatTime(seconds, false);
@@ -292,7 +338,23 @@ void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, cha
       secDisp = "  ";
       break;
   }
-  lcd.print(hourDisp + ":" + minDisp + ":" + secDisp + " " + sunlight + " " + processTemp());
+
+  char sunlightChar[3];
+  sunlight.toCharArray(sunlightChar, 3);
+  char timeChar[9];
+  (hourDisp + ":" + minDisp + ":" + secDisp).toCharArray(timeChar, 9);
+  char tempDisplay[7];
+  processTemp(true).toCharArray(tempDisplay, 7);
+
+  rightDisplay.firstPage();
+  do {
+    rightDisplay.setFont(u8g2_font_profont22_mf);
+    rightDisplay.drawStr(100, 45, sunlightChar);
+    rightDisplay.setFont(u8g2_font_profont29_tf);
+    rightDisplay.drawStr(0, 30, timeChar);
+    rightDisplay.setFont(u8g2_font_profont22_mf);
+    rightDisplay.drawStr(0, 60, tempDisplay);
+  } while ( rightDisplay.nextPage() );
 }
 
 String formatTime(int theTime, boolean hours) {
@@ -307,11 +369,15 @@ String formatTime(int theTime, boolean hours) {
   }
 }
 
-String processTemp() {
-  int tempC = round(temp);
-  //int tempF = round(temp*9.0/5.0 + 32.0);
-  String theTemp = String(tempC);
-  return (theTemp + (char)223 + "C");
+String processTemp(bool fahrenheit) {
+  float tempDisplay = temp;
+  char unit = 'C';
+  if (fahrenheit) {
+    tempDisplay = temp*9.0/5.0 + 32.0; // comment this out for celcius
+    unit = 'F';
+  }
+  tempDisplay = round(tempDisplay*10.0)/10.0;
+  return (String(tempDisplay).substring(0,4) + "\xB0" + unit);
 }
 
 void hourlyAlarm() {
@@ -360,26 +426,34 @@ void resetTime() {
   byte seconds = now.second();
   byte DoW = getDoW();
 
+  Serial.println("Updating week");
   DoW = processReset('w', year, month, day, DoW);
-  updateUpperLCD(year, month, day, DoW, ' ');
+  updateLeftOLED(year, month, day, DoW, ' ');
+  Serial.println("Updating month");
   month = processReset('m', year, month, day, DoW);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, DoW, ' ');
+  updateLeftOLED(year, month, day, DoW, ' ');
+  Serial.println("Updating day");
   day = processReset('d', year, month, day, DoW);
-  updateUpperLCD(year, month, day, DoW, ' ');
+  updateLeftOLED(year, month, day, DoW, ' ');
+  Serial.println("Updating year");
   year = processReset('y', year, month, day, DoW);
   day = errorCheckDay;
-  updateUpperLCD(year, month, day, DoW, ' ');
+  updateLeftOLED(year, month, day, DoW, ' ');
+  Serial.println("Updating hours");
   hours = processReset('h', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
+  Serial.println("Updating minutes");
   minutes = processReset('n', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
+  Serial.println("Updating seconds");
   seconds = processReset('s', hours, minutes, seconds, DoW);
   processLCD(hours, minutes, seconds, ' ');
 
   rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
   setDoW(DoW);
 
+  Serial.println("writing at updateTime()");
   writeTime(year, month, day, hours, minutes, seconds, DoW);
 
   timeout = false;
@@ -450,9 +524,9 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
         newTime = newTime % 7;
 
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(data1, data2, data3, newTime, 'w');
+          updateLeftOLED(data1, data2, data3, newTime, 'w');
         } else {
-          updateUpperLCD(data1, data2, data3, newTime, ' ');
+          updateLeftOLED(data1, data2, data3, newTime, ' ');
         }
         break;
       }
@@ -465,9 +539,9 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(newTime, data2, data3, DoW, 'y');
+          updateLeftOLED(newTime, data2, data3, DoW, 'y');
         } else {
-          updateUpperLCD(newTime, data2, data3, DoW, ' ');
+          updateLeftOLED(newTime, data2, data3, DoW, ' ');
         }
         break;
       }
@@ -487,9 +561,9 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(data1, newTime, data3, DoW, 'm');
+          updateLeftOLED(data1, newTime, data3, DoW, 'm');
         } else {
-          updateUpperLCD(data1, newTime, data3, DoW, ' ');
+          updateLeftOLED(data1, newTime, data3, DoW, ' ');
         }
         break;
       }
@@ -506,9 +580,9 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
         }
         
         if (neutralTime % 20 > 10 || settingTime < 5) {
-          updateUpperLCD(data1, data2, newTime, DoW, 'd');
+          updateLeftOLED(data1, data2, newTime, DoW, 'd');
         } else {
-          updateUpperLCD(data1, data2, newTime, DoW, ' ');
+          updateLeftOLED(data1, data2, newTime, DoW, ' ');
         }
         break;
       }
@@ -565,7 +639,7 @@ void processLCD(byte hours, byte minutes, byte seconds, char hideType) {
     sunlight = "pm";
   }
   
-  updateLowerLCD(hours, minutes, seconds, sunlight, hideType);
+  updateRightOLED(hours, minutes, seconds, sunlight, hideType);
 }
 
 
