@@ -36,6 +36,8 @@ byte thisTime = 0;
 byte oldTime = 0;
 float temp = 0;
 
+int numChanges = 0;
+
 const String months[] = {"January", "February", "March", "April", "May", "June",
                          "July", "August", "September", "October", "November", "December"};
 const byte monthLens[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -375,6 +377,9 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
   char tempCDisplay[7];
   processTemp(false).toCharArray(tempCDisplay, 7);
 
+  char numChar[3];
+  ((String)numChanges).toCharArray(numChar, 3);
+
   rightDisplay.firstPage();
   do {
     rightDisplay.setFont(u8g2_font_profont22_mf);
@@ -385,6 +390,8 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
     rightDisplay.drawStr(0, 63, tempFDisplay);
     rightDisplay.setFont(u8g2_font_profont15_mf);
     rightDisplay.drawStr(83, 63, tempCDisplay);
+
+    rightDisplay.drawStr(0, 10, numChar                             );
   } while ( rightDisplay.nextPage() );
 }
 
@@ -525,6 +532,8 @@ void resetTime() {
   setDoW(DoW);
 
   writeTime(year, month, day, hours, minutes, seconds, DoW);
+
+  numChanges++;
 
   timeout = false;
 }
