@@ -15,6 +15,7 @@ const int timeSpeed = 600;
 double timeSec = 0;
 unsigned long oldTime = 0;
 unsigned long time0 = 0;
+unsigned long thisTime = 0;
  
 void setup() {
   pinMode(stepPin,OUTPUT); 
@@ -29,23 +30,28 @@ void setup() {
 }
 
 void loop() {
-  time0 = millis();
+  time0 = micros();
   for(int x = 0; x < numSteps; x++) {
     digitalWrite(stepPin,HIGH);
     digitalWrite(ledPin,HIGH);
-    delayMicroseconds(timeSpeed); 
+    delayMicroseconds(timeSpeed);
     digitalWrite(stepPin,LOW);
     digitalWrite(ledPin,LOW);
     delayMicroseconds(timeSpeed);
   }
-  timeSec+=1000;
-  if(millis()>oldTime){
-    oldTime=millis();
-    delay(timeSec-millis());
-    Serial.println(micros());
+  timeSec+=1000000;
+  thisTime=micros();
+  if(thisTime>=oldTime){
+    oldTime=thisTime;
+    delay((timeSec-thisTime)/1000);
   } else { 
-    timeSec=millis();
-    unsigned long difference = millis()-time0;
-    delay(difference);
+    timeSec=thisTime;
+    oldTime=thisTime;
+    unsigned long difference = thisTime-time0;
+    delay((1000000-difference)/1000);
+    Serial.println("it did the thing");
   }
+  Serial.print(timeSec);
+  Serial.print(" ");
+  Serial.println(thisTime);
 }
