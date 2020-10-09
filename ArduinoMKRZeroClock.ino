@@ -1,5 +1,5 @@
-#include <RTCZero.h>
 #include <Wire.h>
+#include "RTClib.h"
 #include <LiquidCrystal_I2C.h>
 
 #include <SPI.h>
@@ -10,7 +10,7 @@
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 /* Create an rtc object */
-RTCZero rtc;
+RTC_DS3231 rtc;
 
 // defines pins numbers
 const byte stepPin = 8;
@@ -130,14 +130,12 @@ void setup() {
 
   rtc.begin();
   if (thisTime > oldTime) {
-    rtc.setTime(thisHour, thisMinute, thisSecond);
-    rtc.setDate(thisDay, thisMonth, thisYear);
+    rtc.adjust(DateTime(thisYear, thisMonth, thisDay, thisHour, thisMinute, thisSecond));
     weekDay = thisWeek;
     oldDay = thisDay;
     Serial.println("Using SD time");
   } else {
-    rtc.setTime(hours, minutes, seconds);
-    rtc.setDate(day, month, year);
+    rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
     oldDay = day;
     Serial.println("Using code time");
   }
@@ -161,7 +159,8 @@ void setup() {
 }
 
 void loop() {
-  thisTime = rtc.getSeconds();
+  DateTime now = rtc.now();
+  thisTime = now.second();
   
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
     updateTime();
@@ -175,7 +174,8 @@ void loop() {
       if (beingReset) {
         resetTime();
         beingReset = false;
-        oldTime = rtc.getSeconds();
+        now = rtc.now();
+        oldTime = now.second();
       } else {
         beingReset = true;
       }
@@ -197,9 +197,11 @@ void rotateMotor() {
 }
 
 void updateTime() {
-  byte year = rtc.getYear();
-  byte month = rtc.getMonth();
-  byte day = rtc.getDay();
+  DateTime now = rtc.now();
+  
+  byte year = now.year();
+  byte month = now.month();
+  byte day = now.day();
   if (day != oldDay) {
     oldDay = day;
     weekDay++;
@@ -210,7 +212,7 @@ void updateTime() {
 
   updateUpperLCD(year, month, day, weekDay, true);
 
-  byte hours = rtc.getHours();
+  byte hours = now.hour();
   byte rawHours = hours;
   String sunlight = "am";
   if (hours > 12) {
@@ -220,8 +222,8 @@ void updateTime() {
     hours = 12;
   }
 
-  byte minutes = rtc.getMinutes();
-  byte seconds = rtc.getSeconds();
+  byte minutes = now.minute();
+  byte seconds = now.second();
   if (minutes == 0 && seconds == 0) {
     updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 
@@ -229,7 +231,8 @@ void updateTime() {
 
     int oldSecs = seconds;
     hourlyAlarm();
-    seconds = rtc.getSeconds();
+    now = rtc.now();
+    seconds = now.second();
 
     while (oldSecs < seconds) {
       for (int i = 0; i < seconds - oldSecs; i++) {
@@ -238,7 +241,8 @@ void updateTime() {
         Serial.println(oldSecs + i);
       }
       oldSecs = seconds;
-      seconds = rtc.getSeconds();
+      now = rtc.now();
+      seconds = now.second();
     }
     delay(500);
   }
@@ -341,12 +345,13 @@ void writeTime(byte year, byte month, byte day, byte hours, byte minutes, byte s
 }
 
 void resetTime() {
-  byte year = rtc.getYear();
-  byte month = rtc.getMonth();
-  byte day = rtc.getDay();
-  byte hours = rtc.getHours();
-  byte minutes = rtc.getMinutes();
-  byte seconds = rtc.getSeconds();
+  DateTime now = rtc.now();
+  byte year = now.year();
+  byte month = now.month();
+  byte day = now.day();
+  byte hours = now.hour();
+  byte minutes = now.minute();
+  byte seconds = now.second();
 
   weekDay = processReset('w', year, month, day);
   updateUpperLCD(year, month, day, weekDay, ' ');
@@ -365,12 +370,7 @@ void resetTime() {
   seconds = processReset('s', hours, minutes, seconds);
   processLCD(hours, minutes, seconds, ' ');
 
-  rtc.setYear(year);
-  rtc.setMonth(month);
-  rtc.setDay(day);
-  rtc.setHours(hours);
-  rtc.setMinutes(minutes);
-  rtc.setSeconds(seconds);
+  rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
 
   writeTime(year, month, day, hours, minutes, seconds);
 
