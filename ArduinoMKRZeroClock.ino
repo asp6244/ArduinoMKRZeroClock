@@ -142,8 +142,8 @@ void setup() {
   pinMode(5, OUTPUT);
   digitalWrite(5, LOW);
 
-  // 24000 sample rate
-  AudioZero.begin(24000);
+  // 48000 sample rate
+  AudioZero.begin(48000);
 
   // Get number of .wav files
   root = SD.open("/");
@@ -370,8 +370,10 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
   sunlight.toCharArray(sunlightChar, 3);
   char timeChar[9];
   (hourDisp + ":" + minDisp + ":" + secDisp).toCharArray(timeChar, 9);
-  char tempDisplay[7];
-  processTemp(true).toCharArray(tempDisplay, 7);
+  char tempFDisplay[7];
+  processTemp(true).toCharArray(tempFDisplay, 7);
+  char tempCDisplay[7];
+  processTemp(false).toCharArray(tempCDisplay, 7);
 
   rightDisplay.firstPage();
   do {
@@ -380,7 +382,9 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
     rightDisplay.setFont(u8g2_font_profont29_tf);
     rightDisplay.drawStr(0, 30, timeChar);
     rightDisplay.setFont(u8g2_font_profont22_mf);
-    rightDisplay.drawStr(0, 60, tempDisplay);
+    rightDisplay.drawStr(0, 63, tempFDisplay);
+    rightDisplay.setFont(u8g2_font_profont15_mf);
+    rightDisplay.drawStr(83, 63, tempCDisplay);
   } while ( rightDisplay.nextPage() );
 }
 
@@ -451,11 +455,11 @@ String randomFile(File dir, int index) {
     } else {
       // files have sizes, directories do not
       if (entryName.endsWith(".WAV")) {
-        index--;
         if (index == 0) {
           Serial.println("Entry found: " + entryName);
           return entryName;
         }
+        index--;
       }
     }
     entry.close();
