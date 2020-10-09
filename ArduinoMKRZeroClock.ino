@@ -4,14 +4,17 @@
  *  
  */
 // defines pins numbers
-const int stepPin = 8; 
-const int dirPin = 9;
-const int sleepPin = 7;
-const int resetPin = 6;
-const int ledPin = 32;
+const int stepPin = 10; 
+const int dirPin = 11;
+const int sleepPin = 12;
+const int resetPin = 9;
+const int ledPin = 13;
 
 const int numSteps = 200; // full rotation
 const int timeSpeed = 600; 
+double timeSec = 0;
+unsigned long oldTime = 0;
+unsigned long time0 = 0;
  
 void setup() {
   pinMode(stepPin,OUTPUT); 
@@ -19,13 +22,14 @@ void setup() {
   pinMode(ledPin,OUTPUT);
   pinMode(sleepPin,OUTPUT);
   pinMode(resetPin,OUTPUT);
+  digitalWrite(dirPin,HIGH);
   digitalWrite(sleepPin, HIGH);
   digitalWrite(resetPin, HIGH);
   Serial.begin(9600);
 }
 
 void loop() {
-  digitalWrite(dirPin,HIGH); // Enables the motor to move in a particular direction
+  time0 = millis();
   for(int x = 0; x < numSteps; x++) {
     digitalWrite(stepPin,HIGH);
     digitalWrite(ledPin,HIGH);
@@ -34,5 +38,14 @@ void loop() {
     digitalWrite(ledPin,LOW);
     delayMicroseconds(timeSpeed);
   }
-//  delay(1000.0-(millis()-time0));
+  timeSec+=1000;
+  if(millis()>oldTime){
+    oldTime=millis();
+    delay(timeSec-millis());
+    Serial.println(micros());
+  } else { 
+    timeSec=millis();
+    unsigned long difference = millis()-time0;
+    delay(difference);
+  }
 }
