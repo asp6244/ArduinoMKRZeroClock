@@ -23,7 +23,7 @@ const byte setTimePin = 0;
 const byte timeUpPin = 1;
 const byte timeDownPin = 2;
 
-const int numSteps = 200; // full rotation
+const int numSteps = 5; // full rotation
 const int timeSpeed = 600;
 byte thisTime = 0;
 byte oldTime = 0;
@@ -232,7 +232,6 @@ void updateTime() {
 }
 
 void updateUpperLCD(byte year, byte month, byte day, char hideType) {
-  
   lcd.setCursor(1, 0);
   String yearDisp = "20" + formatTime(year, false);
   String monthDisp = months[month - 1];
