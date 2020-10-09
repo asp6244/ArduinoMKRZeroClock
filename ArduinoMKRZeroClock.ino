@@ -188,7 +188,7 @@ void updateTime() {
   byte month = rtc.getMonth();
   byte day = rtc.getDay();
 
-  updateUpperLCD(year, month, day);
+  updateUpperLCD(year, month, day, true);
 
   byte hours = rtc.getHours();
   byte rawHours = hours;
@@ -203,7 +203,7 @@ void updateTime() {
   byte minutes = rtc.getMinutes();
   byte seconds = rtc.getSeconds();
   if (minutes == 0 && seconds == 0) {
-    updateLowerLCD(hours, minutes, seconds, sunlight);
+    updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 
     writeTime(year, month, day, rawHours, minutes, 1);
 
@@ -214,7 +214,7 @@ void updateTime() {
     while (oldSecs < seconds) {
       for (int i = 0; i < seconds - oldSecs; i++) {
         rotateMotor();
-        updateLowerLCD(hours, minutes, seconds, sunlight);
+        updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
         Serial.println(oldSecs + i);
       }
       oldSecs = seconds;
@@ -223,18 +223,49 @@ void updateTime() {
     delay(500);
   }
 
-  updateLowerLCD(hours, minutes, seconds, sunlight);
+  updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 }
 
-void updateUpperLCD(byte year, byte month, byte day) {
+void updateUpperLCD(byte year, byte month, byte day, char hideType) {
   lcd.setCursor(1, 0);
-  lcd.print(months[month - 1] + " " + String(day) + ", 20" + String(formatTime(year, false)) + "    ");
+  String yearDisp = "20" + formatTime(year, false);
+  String monthDisp = months[month - 1];
+  String dayDisp = String(day);
+  switch(hideType) {
+    case 'y':
+      yearDisp = "    ";
+      break;
+    case 'm':
+      monthDisp = "   ";
+      break;
+    case 'd':
+      if(day < 10) {
+        dayDisp = " ";
+      } else {
+        dayDisp = "  ";
+      }
+      break;
+  }
+  lcd.print(monthDisp + " " + dayDisp + ", " + yearDisp + "    ");
 }
 
-void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight) {
+void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
   lcd.setCursor(1, 1);
-  lcd.print(formatTime(hours, true) + ":" + formatTime(minutes, false) + ":" +
-            formatTime(seconds, false) + " " + sunlight + "    ");
+  String hourDisp = formatTime(hours, true);
+  String minDisp = formatTime(minutes, false);
+  String secDisp = formatTime(seconds, false);
+  switch(hideType) {
+    case 'h':
+      hourDisp = "  ";
+      break;
+    case 'n':
+      minDisp = "  ";
+      break;
+    case 's':
+      secDisp = "  ";
+      break;
+  }
+  lcd.print(hourDisp + ":" + minDisp + ":" + secDisp + " " + sunlight + "    ");
 }
 
 String formatTime(int theTime, boolean hours) {
@@ -318,6 +349,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
   int upTime = 0;
   int downTime = 0;
   int newTime = 0;
+  int neutralTime = 0;
 
   if (type == 'y' || type == 'h') {
     newTime = data1;
@@ -337,6 +369,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         newTime++;
       }
       upTime++;
+      neutralTime = 0;
     } else if (digitalRead(timeDownPin)) {
       if (downTime % 5 == 0 && downTime <= 20) {
         newTime--;
@@ -346,21 +379,31 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         newTime--;
       }
       downTime++;
+      neutralTime = 0;
     } else if (digitalRead(setTimePin)) {
       setting = false;
     } else {
       upTime = 0;
       downTime = 0;
+      neutralTime++;
     }
 
     switch (type) {
       case 'y':
         newTime = processTime(newTime, 99, 0, 100);
-        updateUpperLCD(newTime, data2, data3);
+        if(neutralTime % 20 > 10) {
+          updateUpperLCD(newTime, data2, data3, 'y');
+        } else {
+          updateUpperLCD(newTime, data2, data3, ' ');
+        }
         break;
       case 'm':
         newTime = processTime(newTime, 12, 1, 12);
-        updateUpperLCD(data1, newTime, data3);
+        if(neutralTime % 20 > 10) {
+          updateUpperLCD(data1, newTime, data3, 'm');
+        } else {
+          updateUpperLCD(data1, newTime, data3, ' ');
+        }
         break;
       case 'd':
         if (data2 == 4 || data2 == 6 || data2 == 9 || data2 == 11) {
@@ -374,19 +417,36 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         } else {
           newTime = processTime(newTime, 31, 1, 31);
         }
-        updateUpperLCD(data1, data2, newTime);
+        
+        if(neutralTime % 20 > 10) {
+          updateUpperLCD(data1, data2, newTime, 'd');
+        } else {
+          updateUpperLCD(data1, data2, newTime, ' ');
+        }
         break;
       case 'h':
         newTime = processTime(newTime, 23, 0, 24);
-        processLCD(newTime, data2, data3);
+        if(neutralTime % 20 > 10) {
+          processLCD(newTime, data2, data3, 'h');
+        } else {
+          processLCD(newTime, data2, data3, ' ');
+        }
         break;
       case 'n':
         newTime = processTime(newTime, 59, 0, 60);
-        processLCD(data1, newTime, data3);
+        if(neutralTime % 20 > 10) {
+          processLCD(data1, newTime, data3, 'n');
+        } else {
+          processLCD(data1, newTime, data3, ' ');
+        }
         break;
       case 's':
         newTime = processTime(newTime, 59, 0, 60);
-        processLCD(data1, data2, newTime);
+        if(neutralTime % 20 > 10) {
+          processLCD(data1, data2, newTime, 's');
+        } else {
+          processLCD(data1, data2, newTime, ' ');
+        }
         break;
     }
     delay(50);
@@ -403,7 +463,7 @@ byte processTime(int newTime, byte upLim, byte lowLim, byte change) {
   return newTime;
 }
 
-void processLCD(byte hours, byte data2, byte data3) {
+void processLCD(byte hours, byte minutes, byte seconds, char hideType) {
   String sunlight = "am";
   if (hours > 12) {
     hours -= 12;
@@ -411,5 +471,5 @@ void processLCD(byte hours, byte data2, byte data3) {
   } else if (hours == 0) {
     hours = 12;
   }
-  updateLowerLCD(hours, data2, data3, sunlight);
+  updateLowerLCD(hours, minutes, seconds, sunlight, hideType);
 }
