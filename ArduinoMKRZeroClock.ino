@@ -2,6 +2,7 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 
+#include <SPI.h>
 #include <SD.h>
 #include <AudioZero.h>
 
@@ -23,15 +24,13 @@ const int timeSpeed = 600;
 byte thisTime = 0;
 byte oldTime = 0;
 
-/* Change these values to set the current initial time */
-const byte seconds = 0;
-const byte minutes = 42;
-const byte hours = 2;
-
-/* Change these values to set the current initial date */
-const byte day = 11;
-const byte month = 3;
+/* Change these values to set the current initial time and time*/
 const byte year = 20;
+const byte month = 3;
+const byte day = 11;
+const byte hours = 19;
+const byte minutes = 9;
+const byte seconds = 50;
 
 const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
@@ -62,10 +61,65 @@ void setup() {
   digitalWrite(resetPin, HIGH);
   
   Serial.begin(9600);
+  //while (!Serial); // wait for serial port to connect.
+
+  // setup SD-card
+  Serial.print("Initializing SD card...");
+  if (!SD.begin(28)) {
+    Serial.println("Initialization failed!");
+    while(true);
+  }
+  Serial.println("Done!");
+
+  File dateTime = SD.open("dateTime.txt");
+  if (!dateTime) {
+    // if the file didn't open, print an error:
+    Serial.println("error opening dateTime.txt");
+    while(true);
+  }
   
+  Serial.println("dateTime.txt:");
+  
+  // read data from the file
+  byte thisYear = dateTime.read();
+  byte thisMonth = dateTime.read();
+  byte thisDay = dateTime.read();
+  byte thisHour = dateTime.read();
+  byte thisMinute = dateTime.read();
+  byte thisSecond = dateTime.read();
+
+  Serial.print("Year: ");
+  Serial.println(thisYear);
+  Serial.print("Month: ");
+  Serial.println(thisMonth);
+  Serial.print("Day: ");
+  Serial.println(thisDay);
+  Serial.print("Hour: ");
+  Serial.println(thisHour);
+  Serial.print("Minute: ");
+  Serial.println(thisMinute);
+  Serial.print("Second: ");
+  Serial.println(thisSecond);
+
+  // close the file:
+  dateTime.close();
+
+  long oldTime = year*33177600 + month*2764800 + day*86400 + hours*3600 + minutes*60 + seconds;
+  long thisTime = thisYear*33177600 + thisMonth*2764800 + thisDay*86400 + thisHour*3600 + 
+                  thisMinute*60 + thisSecond;
+
   rtc.begin();
-  rtc.setTime(hours, minutes, seconds);
-  rtc.setDate(day, month, year);
+  if(thisTime>oldTime) {
+    rtc.setTime(thisHour, thisMinute, thisSecond);
+    rtc.setDate(thisDay, thisMonth, thisYear);
+    Serial.println("Using SD time");
+  } else {
+    rtc.setTime(hours, minutes, seconds);
+    rtc.setDate(day, month, year);
+    Serial.println("Using code time");
+  }
+
+  Serial.println();
 
   lcd.init();
   lcd.backlight();
@@ -76,13 +130,6 @@ void setup() {
   // disable shutdown pin
   pinMode(5,OUTPUT);
   digitalWrite(5,LOW);
-
-  // setup SD-card
-  Serial.print("Initializing SD card");
-  if (!SD.begin(28)) {
-    Serial.println("Initialization failed!");
-    return;
-  }
 
   // 24000 sample rate
   AudioZero.begin(24000);
@@ -114,11 +161,15 @@ void rotateMotor() {
 }
 
 void updateTime() {
-  lcd.setCursor(1,0);
-  lcd.print(months[rtc.getMonth()-1] + " " + String(rtc.getDay()) + ", 20" + 
-            String(rtc.getYear()));
+  byte year = rtc.getYear();
+  byte month = rtc.getMonth();
+  byte day = rtc.getDay();
   
-  int hours = rtc.getHours();
+  lcd.setCursor(1,0);
+  lcd.print(months[month-1] + " " + String(day) + ", 20" + String(year));
+  
+  byte hours = rtc.getHours();
+  byte rawHours = hours;
   String sunlight = "am";
   if(hours > 12) {
     hours -= 12;
@@ -127,10 +178,27 @@ void updateTime() {
     hours = 12;
   }
   
-  int minutes = rtc.getMinutes();
-  int seconds = rtc.getSeconds();
+  byte minutes = rtc.getMinutes();
+  byte seconds = rtc.getSeconds();
   if(minutes == 0 && seconds == 0) {
     updateLCD(hours, minutes, seconds, sunlight);
+
+    File dateTime = SD.open("dateTime.txt", O_WRITE | O_CREAT);
+    if(dateTime) {
+      Serial.print("Writing to dateTime.txt...");
+      dateTime.write(year);
+      dateTime.write(month);
+      dateTime.write(day);
+      dateTime.write(rawHours);
+      dateTime.write(minutes);
+      dateTime.write(1);
+      // close the file:
+      dateTime.close();
+      Serial.println("done.");
+    } else {
+      // if the file didn't open, print an error:
+      Serial.println("error opening dateTime.txt");
+    }
               
     int oldSecs = seconds;
     hourlyAlarm();
@@ -171,15 +239,16 @@ String formatTime(int theTime, boolean hours) {
 
 void hourlyAlarm() {
   String file = files[random(61)];
-  File myFile = SD.open("sounds/" + file + ".wav");
-  if (!myFile) {
+  File soundFile = SD.open("sounds/" + file + ".wav");
+  if (!soundFile) {
     // if the file didn't open, print an error and stop
     Serial.println("error opening " + file);
   } else {
     Serial.println("Playing " + file);
   
     digitalWrite(5,HIGH);
-    AudioZero.play(myFile);
+    AudioZero.play(soundFile);
     digitalWrite(5,LOW);
   }
+  soundFile.close();
 }
