@@ -29,13 +29,6 @@ byte thisTime = 0;
 byte oldTime = 0;
 byte oldDay = 0;
 
-/* Change these values to set the current initial time and time*/
-const byte year = 20;
-const byte month = 3;
-const byte day = 11;
-const byte hours = 19;
-const byte minutes = 9;
-const byte seconds = 50;
 byte weekDay = 0;
 
 const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -84,7 +77,7 @@ void setup() {
   Serial.print("Initializing SD card...");
   if (!SD.begin(28)) {
     Serial.println("Initialization failed!");
-    while (true);
+    abort();
   }
   Serial.println("Done!");
 
@@ -92,52 +85,53 @@ void setup() {
   if (!dateTime) {
     // if the file didn't open, print an error:
     Serial.println("error opening dateTime.txt");
-    while (true);
+    abort();
   }
 
-  Serial.println("dateTime.txt:");
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    Serial.flush();
+    abort();
+  }
 
-  // read data from the file
-  byte thisYear = dateTime.read();
-  byte thisMonth = dateTime.read();
-  byte thisDay = dateTime.read();
-  byte thisHour = dateTime.read();
-  byte thisMinute = dateTime.read();
-  byte thisSecond = dateTime.read();
-  byte thisWeek = dateTime.read();
-
-  Serial.print("Year: ");
-  Serial.println(thisYear);
-  Serial.print("Month: ");
-  Serial.println(thisMonth);
-  Serial.print("Day: ");
-  Serial.println(thisDay);
-  Serial.print("Hour: ");
-  Serial.println(thisHour);
-  Serial.print("Minute: ");
-  Serial.println(thisMinute);
-  Serial.print("Second: ");
-  Serial.println(thisSecond);
-  Serial.print("Week: ");
-  Serial.println(thisWeek);
-
-  // close the file:
-  dateTime.close();
-
-  long oldTime = year * 33177600 + month * 2764800 + day * 86400 + hours * 3600 + minutes * 60 + seconds;
-  long thisTime = thisYear * 33177600 + thisMonth * 2764800 + thisDay * 86400 + thisHour * 3600 +
-                  thisMinute * 60 + thisSecond;
-
-  rtc.begin();
-  if (thisTime > oldTime) {
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, let's set the time!");
+    // When time needs to be set on a new device, or after a power loss, the
+    // following line sets the RTC to the date & time this sketch was compiled
+  
+    Serial.println("dateTime.txt:");
+  
+    // read data from the file
+    int thisYear = dateTime.read();
+    byte thisMonth = dateTime.read();
+    byte thisDay = dateTime.read();
+    byte thisHour = dateTime.read();
+    byte thisMinute = dateTime.read();
+    byte thisSecond = dateTime.read();
+    byte thisWeek = dateTime.read();
+  
+    Serial.print("Year: ");
+    Serial.println(thisYear);
+    Serial.print("Month: ");
+    Serial.println(thisMonth);
+    Serial.print("Day: ");
+    Serial.println(thisDay);
+    Serial.print("Hour: ");
+    Serial.println(thisHour);
+    Serial.print("Minute: ");
+    Serial.println(thisMinute);
+    Serial.print("Second: ");
+    Serial.println(thisSecond);
+    Serial.print("Week: ");
+    Serial.println(thisWeek);
+  
+    // close the file:
+    dateTime.close();
+    
     rtc.adjust(DateTime(thisYear, thisMonth, thisDay, thisHour, thisMinute, thisSecond));
-    weekDay = thisWeek;
-    oldDay = thisDay;
-    Serial.println("Using SD time");
-  } else {
-    rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
-    oldDay = day;
-    Serial.println("Using code time");
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
   Serial.println();
@@ -183,6 +177,8 @@ void loop() {
       beingReset = false;
     }
   }
+
+  delay(50);
 }
 
 void rotateMotor() {
@@ -199,7 +195,7 @@ void rotateMotor() {
 void updateTime() {
   DateTime now = rtc.now();
   
-  byte year = now.year();
+  int year = now.year();
   byte month = now.month();
   byte day = now.day();
   if (day != oldDay) {
@@ -220,11 +216,13 @@ void updateTime() {
     sunlight = "pm";
   } else if (hours == 0) {
     hours = 12;
+  } else if (hours == 12) {
+    sunlight = "pm";
   }
 
   byte minutes = now.minute();
   byte seconds = now.second();
-  if (minutes == 0 && seconds == 0) {
+  if (rawHours == 0 && minutes == 0 && seconds == 0) {
     updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 
     writeTime(year, month, day, rawHours, minutes, 1);
@@ -250,9 +248,9 @@ void updateTime() {
   updateLowerLCD(hours, minutes, seconds, sunlight, ' ');
 }
 
-void updateUpperLCD(byte year, byte month, byte day, byte week, char hideType) {
+void updateUpperLCD(int year, byte month, byte day, byte week, char hideType) {
   lcd.setCursor(0, 0);
-  String yearDisp = "20" + formatTime(year, false);
+  String yearDisp = formatTime(year, false);
   String monthDisp = months[month - 1];
   String dayDisp = String(day);
   String weekDisp = weeks[(week % 7)];
@@ -274,7 +272,8 @@ void updateUpperLCD(byte year, byte month, byte day, byte week, char hideType) {
       weekDisp = "   ";
       break;
   }
-  lcd.print(weekDisp + ", " + monthDisp + " " + dayDisp + ", " + yearDisp);
+  
+  lcd.print(weekDisp + ", " + monthDisp + " " + dayDisp + " " + yearDisp + " ");
 }
 
 void updateLowerLCD(byte hours, byte minutes, byte seconds, String sunlight, char hideType) {
@@ -324,7 +323,7 @@ void hourlyAlarm() {
   soundFile.close();
 }
 
-void writeTime(byte year, byte month, byte day, byte hours, byte minutes, byte seconds) {
+void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte seconds) {
   File dateTime = SD.open("dateTime.txt", O_WRITE | O_CREAT);
   if (dateTime) {
     Serial.print("Writing to dateTime.txt...");
@@ -346,7 +345,7 @@ void writeTime(byte year, byte month, byte day, byte hours, byte minutes, byte s
 
 void resetTime() {
   DateTime now = rtc.now();
-  byte year = now.year();
+  int year = now.year();
   byte month = now.month();
   byte day = now.day();
   byte hours = now.hour();
@@ -449,7 +448,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
         break;
       }
       case 'y': {
-        newTime = processTime(newTime, 99, 0, 100);
+        //newTime = processTime(newTime, 99, 0, 100);
 
         if (newTime % 4 != 0 && data2 == 2 && data3 == 29) {
           data3 = 28;
@@ -555,6 +554,9 @@ void processLCD(byte hours, byte minutes, byte seconds, char hideType) {
     sunlight = "pm";
   } else if (hours == 0) {
     hours = 12;
+  } else if (hours == 12) {
+    sunlight = "pm";
   }
+  
   updateLowerLCD(hours, minutes, seconds, sunlight, hideType);
 }
