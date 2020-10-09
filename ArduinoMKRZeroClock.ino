@@ -4,11 +4,11 @@
  *  
  */
 // defines pins numbers
-const int stepPin = 10; 
-const int dirPin = 11;
-const int sleepPin = 12;
-const int resetPin = 9;
-const int ledPin = 13;
+const int stepPin = 8; 
+const int dirPin = 9;
+const int sleepPin = 7;
+const int resetPin = 6;
+const int ledPin = 32;
 
 const int numSteps = 200; // full rotation
 const int timeSpeed = 600; 
@@ -30,28 +30,28 @@ void setup() {
 }
 
 void loop() {
-  time0 = micros();
+  time0 = millis();
   for(int x = 0; x < numSteps; x++) {
     digitalWrite(stepPin,HIGH);
     digitalWrite(ledPin,HIGH);
-    delayMicroseconds(timeSpeed);
+    delayMicroseconds(timeSpeed); 
     digitalWrite(stepPin,LOW);
     digitalWrite(ledPin,LOW);
     delayMicroseconds(timeSpeed);
   }
-  timeSec+=1000000;
-  thisTime=micros();
+  timeSec+=1000;
+  thisTime=millis();
   if(thisTime>=oldTime){
     oldTime=thisTime;
-    delay((timeSec-thisTime)/1000);
+    delay(timeSec-thisTime);
   } else { 
     timeSec=thisTime;
     oldTime=thisTime;
     unsigned long difference = thisTime-time0;
-    delay((1000000-difference)/1000);
+    delay(1000-difference);
     Serial.println("it did the thing");
   }
   Serial.print(timeSec);
   Serial.print(" ");
-  Serial.println(thisTime);
+  Serial.println(millis());
 }
