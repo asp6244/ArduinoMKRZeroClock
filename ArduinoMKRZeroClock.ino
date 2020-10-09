@@ -17,6 +17,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightDisplay(U8G2_R0);
 #define LEFT_SCREEN 0x3C
 #define RIGHT_SCREEN 0x3D
 
+File root;
+
 // defines pins numbers
 const byte stepPin = 8;
 const byte dirPin = 9;
@@ -39,21 +41,7 @@ const String months[] = {"January", "February", "March", "April", "May", "June",
 const byte monthLens[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 const String weeks[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
-const String files[] = {"7395", "2682209", "alaska", "alask-im", "amer-nev", "anch-lib",
-                        "chi-fall", "comdeat1", "comdeat2", "comdetec", "comengag",
-                        "comfailu", "comlie", "comsetba", "comtarga", "compos-1",
-                        "compos-2", "compos-3", "compos-4", "compos-5", "death-1", "death-3",
-                        "death-4", "death-5", "death-co", "death-no",
-                        "dem-neve", "dem-nonn", "dest-co1", "dest-co2",
-                        "embrc-de", "enggchin", "enggred", "eradictd", "freedom",
-                        "futile", "imposs", "inad", "lastfall", "libonln1", "libonln2",
-                        "libonln3", "libonln4", "notfearr", "ovrchrg1", "ovrchrg2",
-                        "ovrchrg3", "primtrg1", "primtrg2", "primtrg3",
-                        "primtrg4", "reddetct", "redimpos", "titan", "voicemd1",
-                        "voicemd2", "voicemd3", "voicemd4", "warning1", "warning2",
-                        "zeroper"
-                       };
-const int numFiles = 61;
+int numFiles = 0;
 
 boolean beingReset = false;
 boolean timeout = false;
@@ -157,14 +145,54 @@ void setup() {
   // 24000 sample rate
   AudioZero.begin(24000);
 
+  // Get number of .wav files
+  root = SD.open("/");
+  Serial.println("Looking for .wav files... (File Name, Index, Size)");
+  printDirectory(root, "", 0);
+  root.rewindDirectory();
+  Serial.println("done!");
+  Serial.print("Number of files: ");
+  Serial.println(numFiles);
+
   randomSeed(analogRead(6));
+}
+
+void printDirectory(File dir, String root, int numTabs) {
+  while (true) {
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+    
+    String entryName = entry.name();
+    Serial.print(entryName);
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      printDirectory(entry, (entryName + "/"), numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      Serial.print("\t");
+      if (entryName.endsWith(".WAV")) {
+        Serial.print((String)numFiles + "\t");
+        numFiles++;
+      } else {
+        Serial.print("\t");
+      }
+      Serial.println(entry.size(), DEC);
+    }
+    
+    entry.close();
+  }
 }
 
 void loop() {
   DateTime now = rtc.now();
   thisTime = now.second();
-  
-  Serial.println(thisTime);
   
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
     temp = rtc.getTemperature();
@@ -232,7 +260,6 @@ void updateTime() {
     updateRightOLED(hours, minutes, seconds, sunlight, ' ');
 
     if (rawHours == 0) {
-      Serial.println("writing at updateTime()");
       writeTime(year, month, day, rawHours, minutes, 1, DoW);
     }
 
@@ -305,7 +332,7 @@ void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
   char suffixChar[3];
   daySuffix.toCharArray(suffixChar, 3);
 
-  int suffixXPos = 24;
+  int suffixXPos = 25;
   if (day >= 10) {
     suffixXPos += 16;
   }
@@ -381,19 +408,59 @@ String processTemp(bool fahrenheit) {
 }
 
 void hourlyAlarm() {
-  String file = files[random(61)];
-  File soundFile = SD.open("sounds/" + file + ".wav");
-  if (!soundFile) {
-    // if the file didn't open, print an error and stop
-    Serial.println("error opening " + file);
+  Serial.println("Playing hourly alarm");
+  int index = random(numFiles);
+  Serial.println("Random index: " + (String)index);
+  
+  String fileName = randomFile(root, index);
+  root.rewindDirectory();
+  
+  if (fileName.equals("")) {
+    Serial.println("Error: no valid file found at index " + (String)index);
   } else {
-    Serial.println("Playing " + file);
-
-    digitalWrite(5, HIGH);
-    AudioZero.play(soundFile);
-    digitalWrite(5, LOW);
+    File soundFile = SD.open(fileName);
+    if (!soundFile) {
+      // if the file didn't open, print an error and stop
+      Serial.println("error opening " + fileName);
+    } else {
+      Serial.println("Playing " + fileName);
+      
+      digitalWrite(5, HIGH);
+      AudioZero.play(soundFile);
+      digitalWrite(5, LOW);
+      Serial.println("End of file.");
+    }
+    soundFile.close();
   }
-  soundFile.close();
+}
+
+String randomFile(File dir, int index) {
+  while (true) {
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    
+    String entryName = entry.name();
+    if (entry.isDirectory()) {
+      String fileName = randomFile(entry, index);
+      if (!fileName.equals("")) {
+        return entryName + "/" + fileName;
+      }
+    } else {
+      // files have sizes, directories do not
+      if (entryName.endsWith(".WAV")) {
+        index--;
+        if (index == 0) {
+          Serial.println("Entry found: " + entryName);
+          return entryName;
+        }
+      }
+    }
+    entry.close();
+  }
+  return "";
 }
 
 void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte seconds, byte DoW) {
@@ -453,7 +520,6 @@ void resetTime() {
   rtc.adjust(DateTime(year, month, day, hours, minutes, seconds));
   setDoW(DoW);
 
-  Serial.println("writing at updateTime()");
   writeTime(year, month, day, hours, minutes, seconds, DoW);
 
   timeout = false;
