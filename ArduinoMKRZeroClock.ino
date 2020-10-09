@@ -37,8 +37,9 @@ const byte minutes = 9;
 const byte seconds = 50;
 
 const String months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
-                        };
+                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
+const byte monthLens[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 const String files[] = {"7395", "2682209", "alaska", "alask-im", "amer-nev", "anch-lib",
                         "chi-fall", "comdeat1", "comdeat2", "comdetec", "comengag",
@@ -57,6 +58,8 @@ const String files[] = {"7395", "2682209", "alaska", "alask-im", "amer-nev", "an
 const int numFiles = 61;
 
 boolean beingReset = false;
+boolean timeout = false;
+byte errorCheckDay = 0;
 
 void setup() {
   pinMode(stepPin, OUTPUT);
@@ -151,6 +154,7 @@ void setup() {
 
 void loop() {
   thisTime = rtc.getSeconds();
+  
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
     updateTime();
 
@@ -163,6 +167,7 @@ void loop() {
       if (beingReset) {
         resetTime();
         beingReset = false;
+        oldTime = rtc.getSeconds();
       } else {
         beingReset = true;
       }
@@ -227,6 +232,7 @@ void updateTime() {
 }
 
 void updateUpperLCD(byte year, byte month, byte day, char hideType) {
+  
   lcd.setCursor(1, 0);
   String yearDisp = "20" + formatTime(year, false);
   String monthDisp = months[month - 1];
@@ -324,11 +330,19 @@ void resetTime() {
   byte seconds = rtc.getSeconds();
 
   month = processReset('m', year, month, day);
+  day = errorCheckDay;
+  updateUpperLCD(year, month, day, ' ');
   day = processReset('d', year, month, day);
+  updateUpperLCD(year, month, day, ' ');
   year = processReset('y', year, month, day);
+  day = errorCheckDay;
+  updateUpperLCD(year, month, day, ' ');
   hours = processReset('h', hours, minutes, seconds);
+  processLCD(hours, minutes, seconds, ' ');
   minutes = processReset('n', hours, minutes, seconds);
+  processLCD(hours, minutes, seconds, ' ');
   seconds = processReset('s', hours, minutes, seconds);
+  processLCD(hours, minutes, seconds, ' ');
 
   rtc.setYear(year);
   rtc.setMonth(month);
@@ -338,6 +352,8 @@ void resetTime() {
   rtc.setSeconds(seconds);
 
   writeTime(year, month, day, hours, minutes, seconds);
+
+  timeout = false;
 }
 
 byte processReset(char type, byte data1, byte data2, byte data3) {
@@ -350,6 +366,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
   int downTime = 0;
   int newTime = 0;
   int neutralTime = 0;
+  errorCheckDay = data3;
 
   if (type == 'y' || type == 'h') {
     newTime = data1;
@@ -359,7 +376,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
     newTime = data3;
   }
 
-  while (setting) {
+  while (setting && !timeout) {
     if (digitalRead(timeUpPin)) {
       if (upTime % 5 == 0 && upTime <= 20) {
         newTime++;
@@ -386,36 +403,62 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
       upTime = 0;
       downTime = 0;
       neutralTime++;
+      if(neutralTime >= 200) {
+        setting = false;
+        timeout = true;
+      }
     }
 
     switch (type) {
-      case 'y':
+      case 'y': {
         newTime = processTime(newTime, 99, 0, 100);
+
+        if(newTime % 4 != 0 && data2 == 2 && data3 == 29) {
+          data3 = 28;
+          errorCheckDay = 28;
+          Serial.print("Gotcha bitch: ");
+          Serial.println(data3);
+        }
+        
         if(neutralTime % 20 > 10) {
           updateUpperLCD(newTime, data2, data3, 'y');
         } else {
           updateUpperLCD(newTime, data2, data3, ' ');
         }
         break;
-      case 'm':
+      }
+      case 'm': {
         newTime = processTime(newTime, 12, 1, 12);
+
+        byte monthLen = monthLens[newTime-1];
+        if(data3 > monthLen) {
+          if(newTime == 2 && data1%4 == 0) {
+            data3 = 29;
+            errorCheckDay = 29;
+            Serial.println("broken");
+          } else {
+            data3 = monthLen;
+            errorCheckDay = monthLen;
+          }
+        }
+        
         if(neutralTime % 20 > 10) {
           updateUpperLCD(data1, newTime, data3, 'm');
         } else {
           updateUpperLCD(data1, newTime, data3, ' ');
         }
         break;
-      case 'd':
-        if (data2 == 4 || data2 == 6 || data2 == 9 || data2 == 11) {
-          newTime = processTime(newTime, 30, 1, 30);
-        } else if (data2 == 2) {
+      }
+      case 'd': {
+        if (data2 == 2) {
           if (data1 % 4 == 0) {
             newTime = processTime(newTime, 29, 1, 29);
           } else {
             newTime = processTime(newTime, 28, 1, 28);
           }
         } else {
-          newTime = processTime(newTime, 31, 1, 31);
+          byte monthLen = monthLens[data2-1];
+          newTime = processTime(newTime, monthLen, 1, monthLen);
         }
         
         if(neutralTime % 20 > 10) {
@@ -424,7 +467,8 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           updateUpperLCD(data1, data2, newTime, ' ');
         }
         break;
-      case 'h':
+      }
+      case 'h': {
         newTime = processTime(newTime, 23, 0, 24);
         if(neutralTime % 20 > 10) {
           processLCD(newTime, data2, data3, 'h');
@@ -432,7 +476,8 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           processLCD(newTime, data2, data3, ' ');
         }
         break;
-      case 'n':
+      }
+      case 'n': {
         newTime = processTime(newTime, 59, 0, 60);
         if(neutralTime % 20 > 10) {
           processLCD(data1, newTime, data3, 'n');
@@ -440,7 +485,8 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           processLCD(data1, newTime, data3, ' ');
         }
         break;
-      case 's':
+      }
+      case 's': {
         newTime = processTime(newTime, 59, 0, 60);
         if(neutralTime % 20 > 10) {
           processLCD(data1, data2, newTime, 's');
@@ -448,6 +494,7 @@ byte processReset(char type, byte data1, byte data2, byte data3) {
           processLCD(data1, data2, newTime, ' ');
         }
         break;
+      }
     }
     delay(50);
   }
