@@ -2,8 +2,8 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 5.2.2
-// Date of last Revision: 9 October, 2020
+// Version: 5.4.0
+// Date of last Revision: 30 October, 2020
 // MIT License 2020
 //
 /////////////////////////////////////////////////////
@@ -46,6 +46,8 @@ const byte timeUpPin = 1;
 const byte timeDownPin = 2;
 
 const byte shutdownPin = 5;
+
+const byte displayOffPin = 4;
 
 // values for motor speed and new time comparisons
 const int numSteps = 5;    // 1 second worth of motor rotation
@@ -427,18 +429,23 @@ void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
     suffixXPos += 16;
   }
 
-  // display contents to OLED using U8g2 library
-  leftDisplay.firstPage();
-  do {
-    leftDisplay.setFont(u8g2_font_profont22_mf);
-    leftDisplay.drawStr(80, 63, yearChar);
-    leftDisplay.setFont(u8g2_font_profont29_tf);
-    leftDisplay.drawStr(10, 63, dayChar);
-    leftDisplay.setFont(u8g2_font_profont22_mf);
-    leftDisplay.drawStr(suffixXPos, 63, suffixChar);
-    leftDisplay.drawStr(0, 35, monthChar);
-    leftDisplay.drawStr(0, 15, weekChar);
-  } while (leftDisplay.nextPage());
+  // if the dislay switch is in the off position
+  if(!digitalRead(displayOffPin)) {
+    // display contents to OLED using U8g2 library
+    leftDisplay.firstPage();
+    do {
+      leftDisplay.setFont(u8g2_font_profont22_mf);
+      leftDisplay.drawStr(80, 63, yearChar);
+      leftDisplay.setFont(u8g2_font_profont29_tf);
+      leftDisplay.drawStr(10, 63, dayChar);
+      leftDisplay.setFont(u8g2_font_profont22_mf);
+      leftDisplay.drawStr(suffixXPos, 63, suffixChar);
+      leftDisplay.drawStr(0, 35, monthChar);
+      leftDisplay.drawStr(0, 15, weekChar);
+    } while (leftDisplay.nextPage());
+  } else {
+    leftDisplay.clear();
+  }
 }
 
 /*
@@ -490,21 +497,26 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
   char numChar[3];
   ((String)numChanges).toCharArray(numChar, 3);
 
-  // display contents to OLED using U8g2 library
-  rightDisplay.firstPage();
-  do {
-    rightDisplay.setFont(u8g2_font_profont22_mf);
-    rightDisplay.drawStr(100, 45, sunlightChar);
-    rightDisplay.setFont(u8g2_font_profont29_tf);
-    rightDisplay.drawStr(0, 30, timeChar);
-    rightDisplay.setFont(u8g2_font_profont22_mf);
-    rightDisplay.drawStr(0, 63, tempFDisplay);
-    rightDisplay.setFont(u8g2_font_profont15_mf);
-    rightDisplay.drawStr(83, 63, tempCDisplay);
-
-    // debug value
-    rightDisplay.drawStr(0, 10, numChar);
-  } while ( rightDisplay.nextPage() );
+  // if the dislay switch is in the off position
+  if(!digitalRead(displayOffPin)) {
+    // display contents to OLED using U8g2 library
+    rightDisplay.firstPage();
+    do {
+      rightDisplay.setFont(u8g2_font_profont22_mf);
+      rightDisplay.drawStr(100, 45, sunlightChar);
+      rightDisplay.setFont(u8g2_font_profont29_tf);
+      rightDisplay.drawStr(0, 30, timeChar);
+      rightDisplay.setFont(u8g2_font_profont22_mf);
+      rightDisplay.drawStr(0, 63, tempFDisplay);
+      rightDisplay.setFont(u8g2_font_profont15_mf);
+      rightDisplay.drawStr(83, 63, tempCDisplay);
+  
+      // debug value
+      rightDisplay.drawStr(0, 10, numChar);
+    } while ( rightDisplay.nextPage() );
+  } else {
+    rightDisplay.clear();
+  }
 }
 
 /*
