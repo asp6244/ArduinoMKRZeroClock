@@ -2,8 +2,8 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 5.4.0
-// Date of last Revision: 30 October, 2020
+// Version: 6.0.0
+// Date of last Revision: 22 November, 2020
 // MIT License 2020
 //
 /////////////////////////////////////////////////////
@@ -15,6 +15,11 @@
 #include <SPI.h>
 #include <SD.h>
 #include <AudioZero.h>
+
+// for led driver
+#define DATA 10
+#define CLOCK 13
+#define SWITCH 14
 
 /* Create an rtc object */
 RTC_DS3231 rtc;
@@ -187,6 +192,14 @@ void setup() {
 
   // initialize the random object with a seed frop analog pin 6
   randomSeed(analogRead(6));
+
+  // initialize led driver pins
+  pinMode(DATA,OUTPUT);
+  pinMode(CLOCK,OUTPUT);
+  pinMode(SWITCH,OUTPUT);
+  digitalWrite(DATA,LOW);
+  digitalWrite(CLOCK,LOW);
+  digitalWrite(SWITCH,LOW);
 }
 
 /*
@@ -249,6 +262,9 @@ void loop() {
 
     // rotate the motor
     rotateMotor();
+
+    // update the LEDs
+    updateLEDs(thisTime);
 
     oldTime = thisTime;
     Serial.println(thisTime);
@@ -558,6 +574,92 @@ String processTemp(bool fahrenheit) {
   // format value to String
   tempDisplay = round(tempDisplay*10.0)/10.0; // produces one decimal place
   return (String(tempDisplay).substring(0,4) + "\xB0" + unit);
+}
+
+/*
+ * Update the LED drivers to display the time in seconds
+ */
+void updateLEDs(byte thisTime) {
+  // create empty array for all leds
+  bool leds[70];
+  for(int i=0; i<70; i++) {
+    leds[i] = 0;
+  }
+
+  // remove the back end of the right led array
+  if(thisTime >= 48) {
+    thisTime += 10;
+  }
+  leds[thisTime] = 1;
+  
+  displayAllLEDs(leds);
+}
+
+/*
+ * Update the LEDs with the array containing the 
+ *  configuration of LEDs
+ */
+void displayAllLEDs(bool leds[70]) {
+  //
+  // update left leds
+  //
+  digitalWrite(SWITCH,HIGH);
+  Serial.print("Left  ");
+  
+  // set all previous bits to 0
+  for(int i=0; i<35 ; i++) {
+    displayLED(0);
+    Serial.print(0);
+  }
+  
+  // send the start signal
+  displayLED(1); 
+  Serial.print(" 1 ");
+
+  // display all elements of the array one by one
+  for(int i=0; i<35; i++) {
+    displayLED(leds[i]);
+    Serial.print(leds[i]);
+  }
+  Serial.println();
+
+  //
+  // update right leds
+  //
+  digitalWrite(SWITCH,LOW);
+  Serial.print("Right ");
+  
+  // set all previous bits to 0
+  for(int i=35; i<70 ; i++) {
+    displayLED(0);
+    Serial.print(0);
+  }
+  
+  // send the start signal
+  displayLED(1); 
+  Serial.print(" 1 ");
+
+  // display all elements of the array one by one 
+  // starting with top side
+  for(int i=53; i<70 ; i++) {
+    displayLED(leds[i]);
+    Serial.print(leds[i]);
+  }
+  for(int i=35; i<53 ; i++) {
+    displayLED(leds[i]);
+    Serial.print(leds[i]);
+  }
+  Serial.println();
+}
+
+/**
+ * Update the next led in the shift register with 
+ *  a specified value.
+ */
+void displayLED(bool led) {
+  digitalWrite(DATA,led);
+  digitalWrite(CLOCK,HIGH);
+  digitalWrite(CLOCK,LOW);
 }
 
 /*
