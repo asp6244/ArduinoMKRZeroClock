@@ -2,8 +2,8 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.0.0
-// Date of last Revision: 22 November, 2020
+// Version: 6.1.0
+// Date of last Revision: 11 January, 2020
 // MIT License 2020
 //
 /////////////////////////////////////////////////////
@@ -17,9 +17,13 @@
 #include <AudioZero.h>
 
 // for led driver
-#define DATA 10
+#define DATA1 3
+#define DATA2 4
+#define DATA3 5
 #define CLOCK 13
-#define SWITCH 14
+#define CONTROL 14
+#define ONBOARD 32
+#define POWER 1 //TODO analog
 
 /* Create an rtc object */
 RTC_DS3231 rtc;
@@ -39,20 +43,25 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightDisplay(U8G2_R0);
 File root;
 
 // defines pins numbers
+// clock motor pins
 const byte stepPin = 8;
 const byte dirPin = 9;
 const byte sleepPin = 7;
 const byte resetPin = 6;
 
+// onboard led
 const byte ledPin = 32;
 
+// button pins
 const byte setTimePin = 0;
 const byte timeUpPin = 1;
 const byte timeDownPin = 2;
 
-const byte shutdownPin = 5;
+// audio shutdown pin
+#define shutdownPin 10
 
-const byte displayOffPin = 4;
+// OLED control pin
+#define displayOffPin 1 // analog
 
 // values for motor speed and new time comparisons
 const int numSteps = 5;    // 1 second worth of motor rotation
@@ -83,7 +92,7 @@ byte errorCheckDay = 0;
  * Run setup function
  */
 void setup() {
-  // set values of all pins
+  // set values of pins for clock motor
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
   pinMode(ledPin, OUTPUT);
@@ -93,6 +102,7 @@ void setup() {
   digitalWrite(sleepPin, HIGH);
   digitalWrite(resetPin, HIGH);
 
+  // set values of pins for buttons
   pinMode(setTimePin, INPUT);
   pinMode(timeUpPin, INPUT);
   pinMode(timeDownPin, INPUT);
@@ -190,16 +200,20 @@ void setup() {
   Serial.print("Number of files: ");
   Serial.println(numFiles);
 
-  // initialize the random object with a seed frop analog pin 6
+  // initialize the random object with a seed from analog pin 6
   randomSeed(analogRead(6));
 
   // initialize led driver pins
-  pinMode(DATA,OUTPUT);
+  pinMode(DATA1,OUTPUT);
+  pinMode(DATA2,OUTPUT);
+  pinMode(DATA3,OUTPUT);
   pinMode(CLOCK,OUTPUT);
-  pinMode(SWITCH,OUTPUT);
-  digitalWrite(DATA,LOW);
+  pinMode(CONTROL,OUTPUT);
+  digitalWrite(DATA1,LOW);
+  digitalWrite(DATA2,LOW);
+  digitalWrite(DATA3,LOW);
   digitalWrite(CLOCK,LOW);
-  digitalWrite(SWITCH,LOW);
+  digitalWrite(CONTROL,LOW);
 }
 
 /*
@@ -264,7 +278,7 @@ void loop() {
     rotateMotor();
 
     // update the LEDs
-    updateLEDs(thisTime);
+    updateLEDs(now);
 
     oldTime = thisTime;
     Serial.println(thisTime);
@@ -446,7 +460,7 @@ void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
   }
 
   // if the dislay switch is in the off position
-  if(!digitalRead(displayOffPin)) {
+  if(analogRead(displayOffPin)<1023*25/33) {
     // display contents to OLED using U8g2 library
     leftDisplay.firstPage();
     do {
@@ -514,7 +528,7 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
   ((String)numChanges).toCharArray(numChar, 3);
 
   // if the dislay switch is in the off position
-  if(!digitalRead(displayOffPin)) {
+  if(analogRead(displayOffPin)<1023*25/33) {
     // display contents to OLED using U8g2 library
     rightDisplay.firstPage();
     do {
@@ -579,85 +593,89 @@ String processTemp(bool fahrenheit) {
 /*
  * Update the LED drivers to display the time in seconds
  */
-void updateLEDs(byte thisTime) {
+void updateLEDs(DateTime now) {
   // create empty array for all leds
-  bool leds[70];
-  for(int i=0; i<70; i++) {
-    leds[i] = 0;
+  bool ledsSec[60], ledsMin[60], ledsHour[60];
+  for(int i=0; i<60; i++) {
+    ledsSec[i] = 0;
+    ledsMin[i] = 0;
+    ledsHour[i] = 0;
   }
 
-  // remove the back end of the right led array
-  if(thisTime >= 48) {
-    thisTime += 10;
-  }
-  leds[thisTime] = 1;
-  
-  displayAllLEDs(leds);
+  // fill arrays with time data
+  ledsSec[now.second()] = 1;
+  ledsMin[now.minute()] = 1;
+  ledsHour[(now.hour()%12)*5 + now.minute()/12] = 1;
+
+  // update LEDs with data
+  displayAllLEDs(ledsSec, ledsMin, ledsHour);
 }
 
 /*
  * Update the LEDs with the array containing the 
  *  configuration of LEDs
  */
-void displayAllLEDs(bool leds[70]) {
+void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
   //
   // update left leds
   //
-  digitalWrite(SWITCH,HIGH);
+  digitalWrite(CONTROL,HIGH);
   Serial.print("Left  ");
   
   // set all previous bits to 0
   for(int i=0; i<35 ; i++) {
-    displayLED(0);
+    displayLED(0, 0, 0);
     Serial.print(0);
   }
   
   // send the start signal
-  displayLED(1); 
+  displayLED(1, 1, 1); 
   Serial.print(" 1 ");
 
   // display all elements of the array one by one
   for(int i=0; i<35; i++) {
-    displayLED(leds[i]);
-    Serial.print(leds[i]);
+    displayLED(ledsSec[i], ledsMin[i], ledsHour[i]);
+    Serial.print(ledsSec[i]);
   }
   Serial.println();
 
   //
   // update right leds
   //
-  digitalWrite(SWITCH,LOW);
+  digitalWrite(CONTROL,LOW);
   Serial.print("Right ");
   
   // set all previous bits to 0
   for(int i=35; i<70 ; i++) {
-    displayLED(0);
+    displayLED(0, 0, 0);
     Serial.print(0);
   }
   
   // send the start signal
-  displayLED(1); 
+  displayLED(1, 1, 1); 
   Serial.print(" 1 ");
 
   // display all elements of the array one by one 
-  // starting with top side
-  for(int i=53; i<70 ; i++) {
-    displayLED(leds[i]);
-    Serial.print(leds[i]);
+  for(int i=35; i<60 ; i++) {
+    displayLED(ledsSec[i], ledsMin[i], ledsHour[i]);
+    Serial.print(ledsSec[i]);
   }
-  for(int i=35; i<53 ; i++) {
-    displayLED(leds[i]);
-    Serial.print(leds[i]);
+  // set the unused LEDs to 0
+  for(int i=60; i<70 ; i++) {
+    displayLED(0, 0, 0);
+    Serial.print(0);
   }
   Serial.println();
 }
 
 /**
- * Update the next led in the shift register with 
+ * Update the next led in the shift registers with 
  *  a specified value.
  */
-void displayLED(bool led) {
-  digitalWrite(DATA,led);
+void displayLED(bool ledSec, bool ledMin, bool ledHour) {
+  digitalWrite(DATA1,ledSec);
+  digitalWrite(DATA2,ledMin);
+  digitalWrite(DATA3,ledHour);
   digitalWrite(CLOCK,HIGH);
   digitalWrite(CLOCK,LOW);
 }
