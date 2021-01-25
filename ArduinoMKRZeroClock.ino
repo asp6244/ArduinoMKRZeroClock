@@ -2,7 +2,7 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.1.0
+// Version: 6.1.1
 // Date of last Revision: 11 January, 2020
 // MIT License 2020
 //
@@ -54,8 +54,8 @@ const byte ledPin = 32;
 
 // button pins
 const byte setTimePin = 0;
-const byte timeUpPin = 1;
-const byte timeDownPin = 2;
+const byte timeUpPin = 2;
+const byte timeDownPin = 1;
 
 // audio shutdown pin
 #define shutdownPin 10
