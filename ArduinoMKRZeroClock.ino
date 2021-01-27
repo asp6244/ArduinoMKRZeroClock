@@ -2,9 +2,9 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.1.1
-// Date of last Revision: 11 January, 2020
-// MIT License 2020
+// Version: 6.2.0
+// Date of last Revision: 27 January, 2021
+// MIT License 2021
 //
 /////////////////////////////////////////////////////
 
@@ -22,8 +22,7 @@
 #define DATA3 5
 #define CLOCK 13
 #define CONTROL 14
-#define ONBOARD 32
-#define POWER 1 //TODO analog
+#define ONBOARD 3
 
 /* Create an rtc object */
 RTC_DS3231 rtc;
@@ -616,11 +615,11 @@ void updateLEDs(DateTime now) {
  *  configuration of LEDs
  */
 void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
-  //
-  // update left leds
+    //
+  // update bottom leds
   //
   digitalWrite(CONTROL,HIGH);
-  Serial.print("Left  ");
+  Serial.print("Bottom ");
   
   // set all previous bits to 0
   for(int i=0; i<35 ; i++) {
@@ -632,18 +631,20 @@ void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
   displayLED(1, 1, 1); 
   Serial.print(" 1 ");
 
-  // display all elements of the array one by one
-  for(int i=0; i<35; i++) {
+  // display all elements of the array one by one 
+  // in order starting at the :13 LED and ending
+  // at the :47 LED
+  for(int i=13; i<48 ; i++) {
     displayLED(ledsSec[i], ledsMin[i], ledsHour[i]);
     Serial.print(ledsSec[i]);
   }
   Serial.println();
 
   //
-  // update right leds
+  // update top leds
   //
   digitalWrite(CONTROL,LOW);
-  Serial.print("Right ");
+  Serial.print("Top    ");
   
   // set all previous bits to 0
   for(int i=35; i<70 ; i++) {
@@ -656,10 +657,17 @@ void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
   Serial.print(" 1 ");
 
   // display all elements of the array one by one 
-  for(int i=35; i<60 ; i++) {
+  // in order starting at the :48 LED and ending
+  // at the :12 LED
+  for(int i=48; i<60 ; i++) {
     displayLED(ledsSec[i], ledsMin[i], ledsHour[i]);
     Serial.print(ledsSec[i]);
   }
+  for(int i=0; i<13 ; i++) {
+    displayLED(ledsSec[i], ledsMin[i], ledsHour[i]);
+    Serial.print(ledsSec[i]);
+  }
+  
   // set the unused LEDs to 0
   for(int i=60; i<70 ; i++) {
     displayLED(0, 0, 0);
