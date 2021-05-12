@@ -2,7 +2,7 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.3.0
+// Version: 6.3.1
 // Date of last Revision: 12 May, 2021
 // MIT License 2021
 //
@@ -279,7 +279,9 @@ void loop() {
     temp = rtc.getTemperature();
 
     // update the OLED displays
-    updateTime();
+    if (updateTime()) {
+      now = rtc.now();
+    }
 
     // rotate the motor
     rotateMotor();
@@ -332,7 +334,10 @@ void rotateMotor() {
 /*
  * Update the time on the OLED displays
  */
-void updateTime() {
+boolean updateTime() {
+  // boolean for whether the time is on the hour or not
+  boolean didSkip = false;
+  
   // get new time
   DateTime now = rtc.now();
   
@@ -383,7 +388,10 @@ void updateTime() {
     while (oldSecs < seconds) {
       for (int i = 0; i < seconds - oldSecs; i++) {
         rotateMotor();
-        updateRightOLED(hours, minutes, seconds, sunlight, ' ');
+        updateRightOLED(hours, minutes, oldSecs + i, sunlight, ' ');
+
+        updateLEDs(DateTime(year, month, day, hours, minutes, oldSecs + i));
+
         Serial.println(oldSecs + i);
       }
       oldSecs = seconds;
@@ -391,10 +399,13 @@ void updateTime() {
       seconds = now.second();
     }
     delay(500);
+    didSkip = true;
   }
 
   // update the right OLED for hours, minutes, and seconds
   updateRightOLED(hours, minutes, seconds, sunlight, ' ');
+
+  return didSkip;
 }
 
 
