@@ -2,8 +2,8 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.2.0
-// Date of last Revision: 27 January, 2021
+// Version: 6.3.0
+// Date of last Revision: 12 May, 2021
 // MIT License 2021
 //
 /////////////////////////////////////////////////////
@@ -16,13 +16,8 @@
 #include <SD.h>
 #include <AudioZero.h>
 
-// for led driver
-#define DATA1 3
-#define DATA2 4
-#define DATA3 5
-#define CLOCK 13
-#define CONTROL 14
-#define ONBOARD 3
+#define SERIAL_PORT	9600
+#define SAMPLE_RATE	48000
 
 /* Create an rtc object */
 RTC_DS3231 rtc;
@@ -32,46 +27,51 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftDisplay(U8G2_R0);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightDisplay(U8G2_R0);
 
 // I2C addresses
-#define CLOCK_ADDRESS 0x68
-#define LEFT_SCREEN 0x3C
-#define RIGHT_SCREEN 0x3D
+#define CLOCK_ADDRESS	0x68
+#define LEFT_SCREEN 	0x3C
+#define RIGHT_SCREEN	0x3D
 
-// timeout time for setting the time of clock
-#define timeoutTime 200
-
+// the file object use for the SD card
 File root;
 
 // defines pins numbers
 // clock motor pins
-const byte stepPin = 8;
-const byte dirPin = 9;
-const byte sleepPin = 7;
-const byte resetPin = 6;
+#define STEP_PIN	8
+#define DIR_PIN 	9
+#define SLEEP_PIN	7
+#define RESET_PIN	6
 
 // onboard led
-const byte ledPin = 32;
+#define LED_PIN	32
 
-// button pins
-const byte setTimePin = 0;
-const byte timeUpPin = 2;
-const byte timeDownPin = 1;
+// time set button pins
+#define SET_TIME_PIN	0
+#define TIME_UP_PIN 	2
+#define TIME_DOWN_PIN	1
 
 // audio shutdown pin
-#define shutdownPin 10
+#define SHUTDOWN_PIN	10
 
 // OLED control pin
-#define displayOffPin 1 // analog
+// analog since all digital pins are being used
+#define DISPLAY_OFF_PIN	1
+// value necessary for the analog display pin to be considered off
+#define DISPLAY_OFF_VAL (1023*3/4) 
+
+// pin numbers for led driver
+#define DATA1 	3
+#define DATA2 	4
+#define DATA3 	5
+#define CLOCK 	13
+#define CONTROL	14
+#define ONBOARD	3
 
 // values for motor speed and new time comparisons
-const int numSteps = 5;    // 1 second worth of motor rotation
-const int timeSpeed = 600; // how slow the motor spins; time in ms
+#define NUM_STEPS	5   // 1 second worth of motor rotation
+#define TIME_SPEED	800 // how slow the motor spins; time in us
 byte thisTime = 0;
 byte oldTime = 0;
 float temp = 0;
-
-// debug value for number of times the clock time has been reset
-// TODO: remove
-int numChanges = 0;
 
 // consts for strings and number of days in each month
 const String months[] = {"January", "February", "March", "April", "May", "June",
@@ -82,31 +82,35 @@ const String weeks[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", 
 // a value for the number of found sound files
 int numFiles = 0;
 
-// variables that need to be used over several functions.
+// timeout time for setting the time of clock
+#define TIMEOUT_TIME 200
+// variables that need to be used over several functions involving resetting the time
 boolean beingReset = false;
 boolean timeout = false;
 byte errorCheckDay = 0;
+
+
 
 /* 
  * Run setup function
  */
 void setup() {
   // set values of pins for clock motor
-  pinMode(stepPin, OUTPUT);
-  pinMode(dirPin, OUTPUT);
-  pinMode(ledPin, OUTPUT);
-  pinMode(sleepPin, OUTPUT);
-  pinMode(resetPin, OUTPUT);
-  digitalWrite(dirPin, HIGH);
-  digitalWrite(sleepPin, HIGH);
-  digitalWrite(resetPin, HIGH);
+  pinMode(STEP_PIN, OUTPUT);
+  pinMode(DIR_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(SLEEP_PIN, OUTPUT);
+  pinMode(RESET_PIN, OUTPUT);
+  digitalWrite(DIR_PIN, HIGH);
+  digitalWrite(SLEEP_PIN, HIGH);
+  digitalWrite(RESET_PIN, HIGH);
 
   // set values of pins for buttons
-  pinMode(setTimePin, INPUT);
-  pinMode(timeUpPin, INPUT);
-  pinMode(timeDownPin, INPUT);
+  pinMode(SET_TIME_PIN, INPUT);
+  pinMode(TIME_UP_PIN, INPUT);
+  pinMode(TIME_DOWN_PIN, INPUT);
 
-  Serial.begin(9600);
+  Serial.begin(SERIAL_PORT);
   //while (!Serial); // wait for serial port to connect.
 
   // setup SD-card
@@ -180,15 +184,15 @@ void setup() {
   rightDisplay.clear();
 
   // turn on onboard LED
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);
 
   // disable audio shutdown pin
-  pinMode(shutdownPin, OUTPUT);
-  digitalWrite(shutdownPin, LOW);
+  pinMode(SHUTDOWN_PIN, OUTPUT);
+  digitalWrite(SHUTDOWN_PIN, LOW);
 
   // 48000 sample rate
-  AudioZero.begin(48000);
+  AudioZero.begin(SAMPLE_RATE);
 
   // Get number of .wav files
   root = SD.open("/");
@@ -214,6 +218,8 @@ void setup() {
   digitalWrite(CLOCK,LOW);
   digitalWrite(CONTROL,LOW);
 }
+
+
 
 /*
  * Print the directory of the SD card, with all folders, filenames, and 
@@ -258,6 +264,8 @@ void printDirectory(File dir, String root, int numTabs) {
   }
 }
 
+
+
 /* 
  * Run main loop
  */
@@ -283,7 +291,7 @@ void loop() {
     Serial.println(thisTime);
 
     // check for a request to reset the time
-    if (digitalRead(setTimePin)) {
+    if (digitalRead(SET_TIME_PIN)) {
       // takes two seconds for the reset to be activated, thus the bool
       if (beingReset) {
         resetTime();
@@ -303,19 +311,23 @@ void loop() {
   delay(50);
 }
 
+
+
 /*
  * Rotate the motor equivalent to the angle of 1 second
  */
 void rotateMotor() {
-  for (int x = 0; x < numSteps; x++) {
-    digitalWrite(stepPin, HIGH);
-    digitalWrite(ledPin, HIGH);
-    delayMicroseconds(timeSpeed);
-    digitalWrite(stepPin, LOW);
-    digitalWrite(ledPin, LOW);
-    delayMicroseconds(timeSpeed);
+  for (int x = 0; x < NUM_STEPS; x++) {
+    digitalWrite(STEP_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
+    delayMicroseconds(TIME_SPEED);
+    digitalWrite(STEP_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+    delayMicroseconds(TIME_SPEED);
   }
 }
+
+
 
 /*
  * Update the time on the OLED displays
@@ -384,6 +396,8 @@ void updateTime() {
   // update the right OLED for hours, minutes, and seconds
   updateRightOLED(hours, minutes, seconds, sunlight, ' ');
 }
+
+
 
 /*
  * Update the Left OLED with the new time
@@ -458,8 +472,8 @@ void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
     suffixXPos += 16;
   }
 
-  // if the dislay switch is in the off position
-  if(analogRead(displayOffPin)<1023*25/33) {
+  // if the dislay switch is in the on position
+  if(analogRead(DISPLAY_OFF_PIN) > DISPLAY_OFF_VAL) {
     // display contents to OLED using U8g2 library
     leftDisplay.firstPage();
     do {
@@ -476,6 +490,8 @@ void updateLeftOLED(int year, byte month, byte day, byte week, char hideType) {
     leftDisplay.clear();
   }
 }
+
+
 
 /*
  * Update the right OLED with the new time
@@ -522,12 +538,8 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
   char tempCDisplay[7];
   processTemp(false).toCharArray(tempCDisplay, 7);
 
-  // debug value
-  char numChar[3];
-  ((String)numChanges).toCharArray(numChar, 3);
-
-  // if the dislay switch is in the off position
-  if(analogRead(displayOffPin)<1023*25/33) {
+  // if the dislay switch is in the on position
+  if(analogRead(DISPLAY_OFF_PIN) > DISPLAY_OFF_VAL) {
     // display contents to OLED using U8g2 library
     rightDisplay.firstPage();
     do {
@@ -539,14 +551,13 @@ void updateRightOLED(byte hours, byte minutes, byte seconds, String sunlight, ch
       rightDisplay.drawStr(0, 63, tempFDisplay);
       rightDisplay.setFont(u8g2_font_profont15_mf);
       rightDisplay.drawStr(83, 63, tempCDisplay);
-  
-      // debug value
-      rightDisplay.drawStr(0, 10, numChar);
     } while ( rightDisplay.nextPage() );
   } else {
     rightDisplay.clear();
   }
 }
+
+
 
 /*
  * A helper function for formatting integer times to
@@ -569,6 +580,8 @@ String formatTime(int theTime, boolean hours) {
   }
 }
 
+
+
 /*
  * A function to format the temperature value into a String, 
  * converting them if necessary.
@@ -588,6 +601,8 @@ String processTemp(bool fahrenheit) {
   tempDisplay = round(tempDisplay*10.0)/10.0; // produces one decimal place
   return (String(tempDisplay).substring(0,4) + "\xB0" + unit);
 }
+
+
 
 /*
  * Update the LED drivers to display the time in seconds
@@ -610,12 +625,14 @@ void updateLEDs(DateTime now) {
   displayAllLEDs(ledsSec, ledsMin, ledsHour);
 }
 
+
+
 /*
  * Update the LEDs with the array containing the 
  *  configuration of LEDs
  */
 void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
-    //
+  //
   // update bottom leds
   //
   digitalWrite(CONTROL,HIGH);
@@ -676,6 +693,8 @@ void displayAllLEDs(bool ledsSec[60], bool ledsMin[60], bool ledsHour[60]) {
   Serial.println();
 }
 
+
+
 /**
  * Update the next led in the shift registers with 
  *  a specified value.
@@ -687,6 +706,8 @@ void displayLED(bool ledSec, bool ledMin, bool ledHour) {
   digitalWrite(CLOCK,HIGH);
   digitalWrite(CLOCK,LOW);
 }
+
+
 
 /*
  * The cuckoo function for playing a random sound file from the speaker.
@@ -713,14 +734,16 @@ void hourlyAlarm() {
       Serial.println("Playing " + fileName);
 
       // play the file
-      digitalWrite(shutdownPin, HIGH);
+      digitalWrite(SHUTDOWN_PIN, HIGH);
       AudioZero.play(soundFile);
-      digitalWrite(shutdownPin, LOW);
+      digitalWrite(SHUTDOWN_PIN, LOW);
       Serial.println("End of file.");
     }
     soundFile.close();
   }
 }
+
+
 
 /*
  * Helper function for determining the directory stack
@@ -764,6 +787,8 @@ String randomFile(File dir, int index) {
   return "";
 }
 
+
+
 /*
  * Write the time to dateTime.txt on the SD card for access 
  * if the clock loses power.
@@ -797,6 +822,8 @@ void writeTime(int year, byte month, byte day, byte hours, byte minutes, byte se
     Serial.println("error opening dateTime.txt");
   }
 }
+
+
 
 /*
  * Processes the changes the user makes when they want to 
@@ -857,12 +884,11 @@ void resetTime() {
   // save the new time to the SD card
   writeTime(year, month, day, hours, minutes, seconds, DoW);
 
-  // increment the debug value
-  numChanges++;
-
   // reset timeout value
   timeout = false;
 }
+
+
 
 /* 
  * This fuunction handles a user resetting the time.
@@ -885,7 +911,7 @@ void resetTime() {
 */
 int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
   // debounce the input
-  while (digitalRead(setTimePin)) {
+  while (digitalRead(SET_TIME_PIN)) {
     delay(50);
   }
 
@@ -912,7 +938,7 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
   // while the clock is still checking for a new value
   while (setting && !timeout) {
     // if the value is being increased
-    if (digitalRead(timeUpPin)) {
+    if (digitalRead(TIME_UP_PIN)) {
       // increment at a particular rate
       if (upTime % 5 == 0 && upTime <= 20) {
         // slow, every 5th cycle
@@ -928,7 +954,7 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
       neutralTime = 0;
     }
     // if the value is being decrimented
-    else if (digitalRead(timeDownPin)) {
+    else if (digitalRead(TIME_DOWN_PIN)) {
       // decriment at a particular rate
       if (downTime % 5 == 0 && downTime <= 20) {
         // slow, every 5th cycle
@@ -944,7 +970,7 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
       neutralTime = 0;
     }
     // checkt to see if the value is done being set
-    else if (digitalRead(setTimePin)) {
+    else if (digitalRead(SET_TIME_PIN)) {
       setting = false;
     }
     // otherwise, increment neutral time and check for timeout
@@ -952,7 +978,7 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
       upTime = 0;
       downTime = 0;
       neutralTime++;
-      if(neutralTime >= timeoutTime) {
+      if(neutralTime >= TIMEOUT_TIME) {
         setting = false;
         timeout = true;
       }
@@ -1104,6 +1130,8 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
   return newTime;
 }
 
+
+
 /*
  * Check to see if the newTime is out of its bounds, and correct it if 
  * it is.
@@ -1122,6 +1150,8 @@ byte processTime(int newTime, byte upLim, byte lowLim, byte change) {
   }
   return newTime;
 }
+
+
 
 /*
  * Helper function to prepocess the values for the right OLED before it 
@@ -1152,6 +1182,9 @@ void processOLED(byte hours, byte minutes, byte seconds, char hideType) {
   // update the right OLED with the correct values
   updateRightOLED(hours, minutes, seconds, sunlight, hideType);
 }
+
+
+
 
 /*
  * These functions are used to get and set the day of week 
