@@ -7,3 +7,5 @@ Sound files on this drive for the clock need to follow the following attributes:
 5. mono
 6. PCM unsigned 8-bit
 7. File names must be 8 characters or fewer excluding the extension. Ex: 12345678.wav
+
+https://audio.online-convert.com/convert/mp3-to-wav

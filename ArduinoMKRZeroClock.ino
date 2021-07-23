@@ -2,8 +2,8 @@
 //
 // Alec Paul
 // Program: Runs the Digital and Analog Cuckoo Clock
-// Version: 6.3.1
-// Date of last Revision: 12 May, 2021
+// Version: 6.4.0
+// Date of last Revision: 23 July, 2021
 // MIT License 2021
 //
 /////////////////////////////////////////////////////
@@ -81,6 +81,7 @@ const String weeks[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", 
 
 // a value for the number of found sound files
 int numFiles = 0;
+int fileIndex;
 
 // timeout time for setting the time of clock
 #define TIMEOUT_TIME 200
@@ -728,16 +729,16 @@ void displayLED(bool ledSec, bool ledMin, bool ledHour) {
 void hourlyAlarm() {
   Serial.println("Playing hourly alarm");
   // get a random index within the range of the number of files
-  int index = random(numFiles);
-  Serial.println("Random index: " + (String)index);
+  fileIndex = random(numFiles);
+  Serial.println("Random index: " + (String)fileIndex);
 
   // get the file at the specified index
-  String fileName = randomFile(root, index);
+  String fileName = randomFile(root);
   root.rewindDirectory();
 
   // check for valid file
   if (fileName.equals("")) {
-    Serial.println("Error: no valid file found at index " + (String)index);
+    Serial.println("Error: no valid file found at index " + (String)fileIndex);
   } else {
     File soundFile = SD.open(fileName);
     if (!soundFile) {
@@ -768,7 +769,7 @@ void hourlyAlarm() {
  *    index: the index of the target file
  * returns: the String representing the file location
  */
-String randomFile(File dir, int index) {
+String randomFile(File dir) {
   while (true) {
     File entry =  dir.openNextFile();
     if (! entry) {
@@ -779,19 +780,19 @@ String randomFile(File dir, int index) {
     String entryName = entry.name();
     if (entry.isDirectory()) {
       // if the current target object is a directory, recurse into it
-      String fileName = randomFile(entry, index);
+      String fileName = randomFile(entry);
       if (!fileName.equals("")) {
         return entryName + "/" + fileName;
       }
     } else {
       // if the target object is a file, check for target .wav file
       if (entryName.endsWith(".WAV")) {
-        if (index == 0) {
+        if (fileIndex == 0) {
           Serial.println("Entry found: " + entryName);
           return entryName;
         }
         // if not, decriment index
-        index--;
+        fileIndex--;
       }
     }
     entry.close();
