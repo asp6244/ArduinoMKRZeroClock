@@ -68,7 +68,7 @@ File root;
 
 // values for motor speed and new time comparisons
 #define NUM_STEPS	5   // 1 second worth of motor rotation
-#define TIME_SPEED	800 // how slow the motor spins; time in us
+#define TIME_SPEED 800 // how slow the motor spins; time in us TODO
 byte thisTime = 0;
 byte oldTime = 0;
 float temp = 0;
@@ -226,7 +226,7 @@ void setup() {
  * size of all files. Set the number of .wav files to the numFiles value.
  * parameters:
  *    dir: the directory to print
- *    root: the directory higher than this object // TODO remove
+ *    root: the directory higher than this object
  *    numTabs: the indentation for the current object in the directory
  */
 void printDirectory(File dir, String root, int numTabs) {
@@ -278,14 +278,9 @@ void loop() {
   if (thisTime > oldTime || (oldTime == 59 && thisTime == 0)) {
     temp = rtc.getTemperature();
 
-    // update the OLED displays
-    if (updateTime()) {
-      now = rtc.now();
-    }
-
     // rotate the motor
     rotateMotor();
-
+    
     // update the LEDs
     updateLEDs(now);
 
@@ -306,6 +301,12 @@ void loop() {
       }
     } else {
       beingReset = false;
+    }
+
+    // update the OLED displays
+    if (updateTime()) {
+      now = rtc.now();
+      oldTime = now.second();
     }
   }
 
@@ -365,10 +366,12 @@ boolean updateTime() {
   // update hours, minutes, seconds
   byte minutes = now.minute();
   byte seconds = now.second();
+
+  // update the right OLED for hours, minutes, and seconds
+  updateRightOLED(hours, minutes, seconds, sunlight, ' ');
+  
   // check for cuckoo time
   if (minutes == 0 && seconds == 0) {
-    updateRightOLED(hours, minutes, seconds, sunlight, ' ');
-
     // write to SD on every strike of midnight
     if (rawHours == 0) {
       writeTime(year, month, day, rawHours, minutes, 1, DoW);
@@ -388,22 +391,21 @@ boolean updateTime() {
     while (oldSecs < seconds) {
       for (int i = 0; i < seconds - oldSecs; i++) {
         rotateMotor();
-        updateRightOLED(hours, minutes, oldSecs + i, sunlight, ' ');
+        updateRightOLED(hours, minutes, oldSecs + i + 1, sunlight, ' ');
 
-        updateLEDs(DateTime(year, month, day, hours, minutes, oldSecs + i));
+        updateLEDs(DateTime(year, month, day, hours, minutes, oldSecs + i + 1));
 
-        Serial.println(oldSecs + i);
+        Serial.println(oldSecs + i + 1);
       }
       oldSecs = seconds;
       now = rtc.now();
       seconds = now.second();
     }
-    delay(500);
     didSkip = true;
-  }
 
-  // update the right OLED for hours, minutes, and seconds
-  updateRightOLED(hours, minutes, seconds, sunlight, ' ');
+    // re-update for the new time
+    updateRightOLED(hours, minutes, seconds, sunlight, ' ');
+  }
 
   return didSkip;
 }
@@ -1150,7 +1152,7 @@ int processReset(char type, int data1, byte data2, byte data3, byte DoW) {
  *    newTime: the value being checked
  *    upLim:   the upper limit of the value (inclusive)
  *    lowLim:  the lower limit of the value (inclusive)
- *    change:  the difference between the upper and lower limit +1 // TODO fix this
+ *    change:  the difference between the upper and lower limit +1
  * returs: the new, bounded value
  */
 byte processTime(int newTime, byte upLim, byte lowLim, byte change) {
@@ -1177,7 +1179,6 @@ byte processTime(int newTime, byte upLim, byte lowLim, byte change) {
  *        'n': minutes is being updated
  *        's': seconds is being updated
  *        ' ': no value is being updated
- *  TODO have return hours for polymorphism
  */
 void processOLED(byte hours, byte minutes, byte seconds, char hideType) {
   String sunlight = "am";
